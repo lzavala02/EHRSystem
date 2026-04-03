@@ -1,4 +1,3 @@
-
 ## 4. Secure Digital Consent Workflow
 **User Story**: As a **Patient**, I want a streamlined, secure way to grant other providers access to my data so that I can avoid the current manual process of phone calls and physical documents.
 

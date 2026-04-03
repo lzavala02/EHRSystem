@@ -1,4 +1,3 @@
-
 ## 5. Provider Efficiency & Proactive Alerts
 **User Story**: As a **Healthcare Provider**, I want automated alerts for trends in chronic conditions and a more user-friendly documentation interface so that I can focus on patient care rather than repetitive data entry.
 
