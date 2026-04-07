@@ -1,59 +1,67 @@
 # Data Design - Entities and Relationships for Chronic Disease Management System
 
 ## Patient
-* Patient ID
+* Patient ID (PK)
 * Full Name
 * Height
 * Weight
 * Family History
 * Vaccination Record
 * Two-Factor Authentication (2FA) Status
+* Primary Provider ID (FK)
 
 ## Healthcare Provider
-* Provider ID
+* Provider ID (PK)
 * Name
 * Specialty (e.g., Dermatology, PCP)
-* Clinic/Facility Affiliation
+* Clinic/Facility Affiliation 
 
 ## EHR System
-* System ID
+* System ID (PK)
 * System Name (e.g., Epic, NextGen)
 * Standard Protocol (FHIR, HL7)
 * Last Synced Timestamp
 
 ## Medical Record Item
-* Record ID
+* Record ID (PK)
+* Patient ID (FK)
+* System ID (FK)
 * Data Category (e.g., Medications, Labs, Vitals)
 * Value/Description
-* Source System
 * Timestamp
 
 ## Symptom Log
-* Log ID
+* Log ID (PK)
+* Patient ID (FK)
 * Symptom Description (Scales, Redness, Joint Aches)
 * Severity Scale
 * Date/Time of Log
 
 ## Trigger
-* Trigger ID
+* Trigger ID (PK)
 * Trigger Name (e.g., Stress, Lack of Sleep, Scented Products)
 
 ## Treatment
-* Treatment ID
+* Treatment ID (PK)
 * Product Name (e.g., Aveeno)
 * Type (OTC, Vitamin, Skincare)
 
 ## Access Request
-* Request ID
+* Request ID (PK)
+* Patient ID (FK)
+* Provider ID (FK)
 * Status (Pending, Approved, Denied)
 * Digital Authorization Document (HIPAA-compliant)
 * Request Timestamp
 
 ## Alert
-* Alert ID
+* Alert ID (PK)
 * Alert Type (Data Conflict, Negative Trend)
 * Description
 * Resolution Status
+* Patient ID (FK)
+* Provider ID (FK)
+* System ID (FK)
 
 ---
 
