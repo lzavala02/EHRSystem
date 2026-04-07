@@ -9,82 +9,103 @@ The rising prevalence of chronic diseases and official diagnoses makes long-term
 
 ```mermaid
 erDiagram
-    PATIENT ||--o{ MEDICAL_RECORD_ITEM : "has"
-    PATIENT ||--o{ SYMPTOM_LOG : "records"
-    PATIENT ||--o{ ACCESS_REQUEST : "manages"
-    PATIENT ||--o{ ALERT : "receives"
+    providers ||--o{ patients : "is primary provider for"
+    patients ||--o{ medical_record_items : "has"
+    ehr_systems ||--o{ medical_record_items : "is source for"
     
-    HEALTHCARE_PROVIDER ||--o{ PATIENT : "manages"
-    HEALTHCARE_PROVIDER ||--o{ ACCESS_REQUEST : "requests"
-    HEALTHCARE_PROVIDER ||--o{ ALERT : "receives"
+    patients ||--o{ symptom_logs : "records"
+    symptom_logs ||--o{ log_triggers : "contains"
+    triggers ||--o{ log_triggers : "observed in"
     
-    EHR_SYSTEM ||--o{ MEDICAL_RECORD_ITEM : "provides"
-    EHR_SYSTEM ||--o{ ALERT : "triggers"
+    symptom_logs ||--o{ log_treatments : "contains"
+    treatments ||--o{ log_treatments : "applied in"
     
-    SYMPTOM_LOG ||--o{ TRIGGER : "includes"
-    SYMPTOM_LOG ||--o{ TREATMENT : "includes"
+    patients ||--o{ access_requests : "approves/denies"
+    providers ||--o{ access_requests : "initiates"
+    
+    patients ||--o{ alerts : "notified of"
+    providers ||--o{ alerts : "notified of"
+    ehr_systems ||--o{ alerts : "generates sync"
 
-    PATIENT {
-        string patient_id PK
-        string full_name
-        float height
-        float weight
+    patients {
+        uuid patient_id PK
+        text full_name
+        numeric height
+        numeric weight
         text family_history
         text vaccination_record
         boolean two_factor_enabled
+        uuid primary_provider_id FK
     }
 
-    HEALTHCARE_PROVIDER {
-        string provider_id PK
-        string name
-        string specialty
-        string clinic_affiliation
+    providers {
+        uuid provider_id PK
+        text name
+        text specialty
+        text clinic_affiliation
     }
 
-    EHR_SYSTEM {
-        string system_id PK
-        string system_name
-        string protocol
-        datetime last_synced
+    ehr_systems {
+        uuid system_id PK
+        text system_name
+        protocol_type protocol
+        timestamptz last_synced_at
     }
 
-    MEDICAL_RECORD_ITEM {
-        string record_id PK
-        string category
-        text description
-        string source_system
-        datetime timestamp
+    medical_record_items {
+        uuid record_id PK
+        uuid patient_id FK
+        uuid system_id FK
+        text category
+        text value_description
+        timestamptz recorded_at
     }
 
-    SYMPTOM_LOG {
-        string log_id PK
-        text description
+    symptom_logs {
+        uuid log_id PK
+        uuid patient_id FK
+        text symptom_description
         int severity_scale
-        datetime log_date
+        timestamptz log_date
     }
 
-    TRIGGER {
-        string trigger_id PK
-        string trigger_name
+    triggers {
+        uuid trigger_id PK
+        text trigger_name
     }
 
-    TREATMENT {
-        string treatment_id PK
-        string product_name
-        string treatment_type
+    log_triggers {
+        uuid log_id PK, FK
+        uuid trigger_id PK, FK
     }
 
-    ACCESS_REQUEST {
-        string request_id PK
-        string status
-        blob authorization_doc
-        datetime timestamp
+    treatments {
+        uuid treatment_id PK
+        text product_name
+        text treatment_type
     }
 
-    ALERT {
-        string alert_id PK
-        string alert_type
+    log_treatments {
+        uuid log_id PK, FK
+        uuid treatment_id PK, FK
+    }
+
+    access_requests {
+        uuid request_id PK
+        uuid patient_id FK
+        uuid provider_id FK
+        access_request_status status
+        text authorization_document
+        timestamptz requested_at
+    }
+
+    alerts {
+        uuid alert_id PK
+        alert_type alert_type
         text description
-        string resolution_status
+        uuid patient_id FK
+        uuid provider_id FK
+        uuid system_id FK
+        alert_status status
     }
 ```
