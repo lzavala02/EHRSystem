@@ -138,3 +138,5 @@ curl http://localhost:8000/health/ready
 ```
 
 Detailed Day 1 checkpoint output is available in [docs/day1_engineer_a_checkpoint.md](docs/day1_engineer_a_checkpoint.md).
+
+Engineer B Day 1 planning and contract baseline output is available in [docs/day1_engineer_b_checkpoint.md](docs/day1_engineer_b_checkpoint.md).
