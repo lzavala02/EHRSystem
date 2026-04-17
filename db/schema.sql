@@ -10,6 +10,7 @@ CREATE TYPE access_request_status AS ENUM ('Pending', 'Approved', 'Denied');
 CREATE TYPE alert_status AS ENUM ('Active', 'Resolved', 'Dismissed');
 CREATE TYPE alert_type AS ENUM ('Data Conflict', 'Negative Trend', 'Missing Data');
 CREATE TYPE protocol_type AS ENUM ('FHIR', 'HL7');
+CREATE TYPE sync_direction AS ENUM ('pull', 'push', 'bidirectional');
 
 ---
 --- 2. CORE ENTITIES
@@ -32,7 +33,7 @@ CREATE TABLE patients (
     family_history TEXT,
     vaccination_record TEXT,
     two_factor_enabled BOOLEAN DEFAULT TRUE, -- AC 4: Mandatory 2FA
-    primary_provider_id UUID REFERENCES providers(provider_id)
+    primary_provider_id UUID NOT NULL REFERENCES providers(provider_id) ON DELETE RESTRICT
 );
 
 -- External EHR Systems (Epic, NextGen, etc.)
@@ -40,7 +41,7 @@ CREATE TABLE ehr_systems (
     system_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     system_name TEXT NOT NULL,
     protocol protocol_type NOT NULL, -- AC 1: Standard Protocols
-    last_synced_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP -- AC 1: Sync timestamps
+    last_synced_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP -- AC 1: Sync timestamps (UTC-aware)
 );
 
 ---
@@ -51,11 +52,24 @@ CREATE TABLE ehr_systems (
 CREATE TABLE medical_record_items (
     record_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     patient_id UUID NOT NULL REFERENCES patients(patient_id) ON DELETE CASCADE,
-    system_id UUID REFERENCES ehr_systems(system_id), -- AC 2: Tracking source
+    system_id UUID NOT NULL REFERENCES ehr_systems(system_id) ON DELETE RESTRICT, -- AC 2: Tracking source
     category TEXT NOT NULL, -- e.g., 'Medications', 'Labs'
     value_description TEXT NOT NULL,
-    recorded_at TIMESTAMPTZ NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Per-patient/per-system/per-category sync freshness metadata (UTC timestamps).
+CREATE TABLE sync_metadata (
+    sync_metadata_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    patient_id UUID NOT NULL REFERENCES patients(patient_id) ON DELETE CASCADE,
+    system_id UUID NOT NULL REFERENCES ehr_systems(system_id) ON DELETE CASCADE,
+    category TEXT NOT NULL,
+    sync_direction sync_direction NOT NULL DEFAULT 'bidirectional',
+    last_synced_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (patient_id, system_id, category)
 );
 
 -- Patient Symptom Tracking
@@ -133,3 +147,7 @@ CREATE INDEX idx_medical_records_patient_category ON medical_record_items(patien
 
 -- Index for Sync Status (AC 1)
 CREATE INDEX idx_ehr_sync ON ehr_systems(last_synced_at);
+
+-- Indexes for sync freshness lookups by patient/system/category (AC 1)
+CREATE INDEX idx_sync_metadata_patient_category ON sync_metadata(patient_id, category);
+CREATE INDEX idx_sync_metadata_system_last_synced ON sync_metadata(system_id, last_synced_at DESC);

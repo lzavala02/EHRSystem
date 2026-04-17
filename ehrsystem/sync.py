@@ -12,7 +12,13 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from .models import Alert, DataCategorySyncStatus, MedicalRecordItem, SyncConflict
+from .models import (
+    Alert,
+    DataCategorySyncStatus,
+    MedicalRecordItem,
+    SyncConflict,
+    SyncMetadataRecord,
+)
 
 
 class EHRProtocolAdapter(ABC):
@@ -115,6 +121,12 @@ class CrossSystemSyncService:
                 deepcopy(record)
             )
 
+    @staticmethod
+    def _utc_now() -> datetime:
+        """Return a timezone-aware UTC timestamp for all sync bookkeeping."""
+
+        return datetime.now(timezone.utc)
+
     def _upsert_local_record(self, record: MedicalRecordItem) -> None:
         """Keep the local repository aligned to the latest pulled snapshot."""
 
@@ -160,9 +172,7 @@ class CrossSystemSyncService:
                 pulled_records.append(deepcopy(record))
                 self._upsert_local_record(record)
                 sync_key = (patient_id, record.category)
-                self._last_synced_by_patient_category[sync_key] = datetime.now(
-                    timezone.utc
-                )
+                self._last_synced_by_patient_category[sync_key] = self._utc_now()
                 self._last_system_by_patient_category[sync_key] = adapter.system_name
 
         return pulled_records
@@ -183,10 +193,33 @@ class CrossSystemSyncService:
 
             for record in local_records:
                 sync_key = (patient_id, record.category)
-                self._last_synced_by_patient_category[sync_key] = datetime.now(
-                    timezone.utc
-                )
+                self._last_synced_by_patient_category[sync_key] = self._utc_now()
                 self._last_system_by_patient_category[sync_key] = adapter.system_name
+
+    def get_sync_metadata_records(self, patient_id: str) -> list[SyncMetadataRecord]:
+        """Build sync metadata rows that mirror the persistence-layer shape."""
+
+        metadata_rows: list[SyncMetadataRecord] = []
+        for (sync_patient_id, category), last_synced_at in sorted(
+            self._last_synced_by_patient_category.items()
+        ):
+            if sync_patient_id != patient_id:
+                continue
+            metadata_rows.append(
+                SyncMetadataRecord(
+                    patient_id=patient_id,
+                    system_id=self._last_system_by_patient_category.get(
+                        (patient_id, category), "Clinic Repository"
+                    ),
+                    category=category,
+                    sync_direction="bidirectional",
+                    last_synced_at=last_synced_at,
+                    created_at=last_synced_at,
+                    updated_at=last_synced_at,
+                )
+            )
+
+        return metadata_rows
 
     def get_last_synced_status(self, patient_id: str) -> list[DataCategorySyncStatus]:
         """Return the per-category timestamps used by the dashboard and sync UI."""
@@ -255,7 +288,7 @@ class CrossSystemSyncService:
                             local_value=local_record.value_description,
                             remote_value=remote_record.value_description,
                             system_name=adapter.system_name,
-                            detected_at=datetime.now(timezone.utc),
+                            detected_at=self._utc_now(),
                         )
                     )
 
@@ -274,5 +307,5 @@ class CrossSystemSyncService:
             patient_id=conflict.patient_id,
             system_id=None,
             status="Active",
-            created_at=datetime.now(timezone.utc),
+            created_at=self._utc_now(),
         )

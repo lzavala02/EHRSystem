@@ -60,6 +60,19 @@ class MedicalRecordItem:
 
 
 @dataclass(slots=True)
+class SyncMetadataRecord:
+    """Per-patient/category sync metadata persisted for freshness tracking."""
+
+    patient_id: str
+    system_id: str
+    category: str
+    sync_direction: str
+    last_synced_at: datetime
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+@dataclass(slots=True)
 class SymptomLog:
     """Patient-entered symptom observation used for trend reporting."""
 
