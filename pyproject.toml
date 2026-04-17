@@ -7,6 +7,12 @@ packages = [{ include = "ehrsystem" }]
 
 [tool.poetry.dependencies]
 python = "^3.13"
+fastapi = "^0.116.1"
+uvicorn = { extras = ["standard"], version = "^0.35.0" }
+redis = "^6.4.0"
+rq = "^2.6.0"
+psycopg = { extras = ["binary"], version = "^3.2.10" }
+httpx = "^0.28.1"
 ruff = "^0.15.10"
 mypy = "^1.20.1"
 pytest-cov = "^7.1.0"

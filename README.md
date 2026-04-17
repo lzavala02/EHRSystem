@@ -109,3 +109,32 @@ erDiagram
         alert_status status
     }
 ```
+
+---
+
+# Day 1 Platform Bootstrap (Engineer A)
+
+This repository now includes a Day 1 platform foundation for shared, Docker-based development across devices.
+
+## Quick Start
+
+1. Copy environment variables:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+2. Start API + PostgreSQL + Redis + worker:
+
+```powershell
+docker compose up --build
+```
+
+3. Validate health probes:
+
+```powershell
+curl http://localhost:8000/health/live
+curl http://localhost:8000/health/ready
+```
+
+Detailed Day 1 checkpoint output is available in [docs/day1_engineer_a_checkpoint.md](docs/day1_engineer_a_checkpoint.md).
