@@ -137,9 +137,129 @@ curl http://localhost:8000/health/live
 curl http://localhost:8000/health/ready
 ```
 
+## Testing Command Formats (Terminal)
+
+Use the project virtual environment interpreter directly for reliable results across machines and shells.
+
+### Why this format
+
+- Preferred: `./.venv/Scripts/python.exe`
+- Avoid for this repo: `python.exe` (often resolves to global Python and misses project dependencies)
+
+### Current implementation (Day 1 and unit tests)
+
+Run the full unit baseline:
+
+```powershell
+./.venv/Scripts/python.exe -m pytest tests/unit -q
+```
+
+Rerun failed tests only:
+
+```powershell
+./.venv/Scripts/python.exe -m pytest tests/unit -q --lf
+```
+
+Rerun failures first, then continue with the rest:
+
+```powershell
+./.venv/Scripts/python.exe -m pytest tests/unit -q --ff
+```
+
+Run a single test module:
+
+```powershell
+./.venv/Scripts/python.exe -m pytest tests/unit/test_alerts.py -q
+```
+
+Run one named test:
+
+```powershell
+./.venv/Scripts/python.exe -m pytest tests/unit/test_consent.py -k "approves_and_generates_document" -q
+```
+
+### Story-focused rerun formats
+
+Story 1 (Sync + conflict alert behavior):
+
+```powershell
+./.venv/Scripts/python.exe -m pytest tests/unit/test_sync.py tests/unit/test_alerts.py -q
+```
+
+Story 2 (Dashboard):
+
+```powershell
+./.venv/Scripts/python.exe -m pytest tests/unit/test_dashboard.py -q
+```
+
+Story 3 (Symptoms and triggers):
+
+```powershell
+./.venv/Scripts/python.exe -m pytest tests/unit/test_symptoms.py -q
+```
+
+Story 4 (Consent):
+
+```powershell
+./.venv/Scripts/python.exe -m pytest tests/unit/test_consent.py -q
+```
+
+Story 5 (Provider efficiency and alerts):
+
+```powershell
+./.venv/Scripts/python.exe -m pytest tests/unit/test_alerts.py -q
+```
+
+### Future implementation formats
+
+Use these as additional test layers are introduced.
+
+Run API contract tests (example folder):
+
+```powershell
+./.venv/Scripts/python.exe -m pytest tests/api -q
+```
+
+Run integration tests (example folder):
+
+```powershell
+./.venv/Scripts/python.exe -m pytest tests/integration -q
+```
+
+Run all tests in project:
+
+```powershell
+./.venv/Scripts/python.exe -m pytest tests -q
+```
+
+Run with coverage for implementation progress tracking:
+
+```powershell
+./.venv/Scripts/python.exe -m pytest tests -q --cov=ehrsystem --cov-report=term-missing
+```
+
+### Optional activated-shell format
+
+If you activate the environment first, you can use `python` instead of the full path.
+
+```powershell
+. ./.venv/Scripts/Activate.ps1
+python -m pytest tests/unit -q
+```
+
+Verification command:
+
+```powershell
+python -c "import sys; print(sys.executable)"
+```
+
+Expected output should include `.venv/Scripts/python.exe`.
+
 Detailed Day 1 Engineer A Checkpoint Output is available in [docs/day1_engineer_a_checkpoint.md](docs/day1_engineer_a_checkpoint.md).
 
 Detailed Day 1 Engineer B Checkpoint Output is available in [docs/day1_engineer_b_checkpoint.md](docs/day1_engineer_b_checkpoint.md).
+
+Living data storage/retrieval testing instructions are available in [docs/data_storage_retrieval_testing.md](docs/data_storage_retrieval_testing.md).
 
 Day 2 joint migration and seed sign-off run order and verification queries are available in [docs/day2_joint_checkpoint.md](docs/day2_joint_checkpoint.md).
 
