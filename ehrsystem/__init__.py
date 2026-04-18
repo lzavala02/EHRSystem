@@ -10,6 +10,12 @@ from .consent import ConsentWorkflowService as ConsentWorkflowService
 from .dashboard import (
     UnifiedChronicDiseaseDashboardService as UnifiedChronicDiseaseDashboardService,
 )
+from .fixtures import (
+    PSORIASIS_TRIGGER_CHECKLIST as PSORIASIS_TRIGGER_CHECKLIST,
+)
+from .fixtures import (
+    is_valid_psoriasis_trigger as is_valid_psoriasis_trigger,
+)
 from .models import (
     AccessRequest as AccessRequest,
 )
@@ -39,6 +45,12 @@ from .models import (
 )
 from .models import (
     Provider as Provider,
+)
+from .models import (
+    ReportArtifact as ReportArtifact,
+)
+from .models import (
+    SecureMessage as SecureMessage,
 )
 from .models import (
     SymptomLog as SymptomLog,

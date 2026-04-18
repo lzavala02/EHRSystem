@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
+from ehrsystem.fixtures import is_valid_psoriasis_trigger
 from ehrsystem.models import Treatment, Trigger
 from ehrsystem.symptoms import SymptomLoggingService
 
@@ -35,3 +36,12 @@ def test_symptom_logging_service_creates_trend_report() -> None:
     assert len(report.symptoms) == 2
     assert report.triggers[0].trigger_name == "Stress"
     assert report.treatments[0].product_name == "Aveeno"
+
+
+def test_psoriasis_trigger_validation_fixture_is_seed_aligned() -> None:
+    """Ensure common psoriasis trigger checks match the seed checklist."""
+
+    assert is_valid_psoriasis_trigger("Stress")
+    assert is_valid_psoriasis_trigger("lack of sleep")
+    assert is_valid_psoriasis_trigger("  Scented Products  ")
+    assert not is_valid_psoriasis_trigger("Unknown Trigger")

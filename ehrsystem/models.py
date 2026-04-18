@@ -127,6 +127,35 @@ class Alert:
     created_at: datetime | None = None
 
 
+@dataclass(slots=True)
+class ReportArtifact:
+    """Generated report metadata used for secure sharing workflows."""
+
+    artifact_id: str
+    patient_id: str
+    generated_by_provider_id: str
+    report_type: str
+    storage_path: str
+    period_start: datetime | None = None
+    period_end: datetime | None = None
+    created_at: datetime | None = None
+
+
+@dataclass(slots=True)
+class SecureMessage:
+    """In-app secure message used for consent/report sharing between providers."""
+
+    message_id: str
+    patient_id: str
+    sender_provider_id: str
+    recipient_provider_id: str
+    message_body: str
+    artifact_id: str | None = None
+    created_at: datetime | None = None
+    delivered_at: datetime | None = None
+    read_at: datetime | None = None
+
+
 # View-model style records used by the UI-facing services.
 
 

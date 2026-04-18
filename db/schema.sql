@@ -135,6 +135,31 @@ CREATE TABLE alerts (
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Generated report metadata for symptom trends and provider sharing
+CREATE TABLE report_artifacts (
+    artifact_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    patient_id UUID NOT NULL REFERENCES patients(patient_id) ON DELETE CASCADE,
+    generated_by_provider_id UUID NOT NULL REFERENCES providers(provider_id) ON DELETE RESTRICT,
+    report_type TEXT NOT NULL, -- e.g., 'Symptom Trend Report'
+    storage_path TEXT NOT NULL,
+    period_start TIMESTAMPTZ,
+    period_end TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Secure in-app messages used for consent/report sharing between providers
+CREATE TABLE secure_messages (
+    message_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    patient_id UUID NOT NULL REFERENCES patients(patient_id) ON DELETE CASCADE,
+    sender_provider_id UUID NOT NULL REFERENCES providers(provider_id) ON DELETE RESTRICT,
+    recipient_provider_id UUID NOT NULL REFERENCES providers(provider_id) ON DELETE RESTRICT,
+    artifact_id UUID REFERENCES report_artifacts(artifact_id) ON DELETE SET NULL,
+    message_body TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    delivered_at TIMESTAMPTZ,
+    read_at TIMESTAMPTZ
+);
+
 ---
 --- 5. INDEXES FOR PERFORMANCE
 ---
@@ -151,3 +176,11 @@ CREATE INDEX idx_ehr_sync ON ehr_systems(last_synced_at);
 -- Indexes for sync freshness lookups by patient/system/category (AC 1)
 CREATE INDEX idx_sync_metadata_patient_category ON sync_metadata(patient_id, category);
 CREATE INDEX idx_sync_metadata_system_last_synced ON sync_metadata(system_id, last_synced_at DESC);
+
+-- Index for provider mailbox retrieval
+CREATE INDEX idx_secure_messages_recipient_created
+    ON secure_messages(recipient_provider_id, created_at DESC);
+
+-- Index for report lookups by patient and generation time
+CREATE INDEX idx_report_artifacts_patient_created
+    ON report_artifacts(patient_id, created_at DESC);

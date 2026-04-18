@@ -137,6 +137,12 @@ curl http://localhost:8000/health/live
 curl http://localhost:8000/health/ready
 ```
 
-Detailed Day 1 checkpoint output is available in [docs/day1_engineer_a_checkpoint.md](docs/day1_engineer_a_checkpoint.md).
+Detailed Day 1 Engineer A Checkpoint Output is available in [docs/day1_engineer_a_checkpoint.md](docs/day1_engineer_a_checkpoint.md).
 
-Engineer B Day 1 planning and contract baseline output is available in [docs/day1_engineer_b_checkpoint.md](docs/day1_engineer_b_checkpoint.md).
+Detailed Day 1 Engineer B Checkpoint Output is available in [docs/day1_engineer_b_checkpoint.md](docs/day1_engineer_b_checkpoint.md).
+
+Day 2 joint migration and seed sign-off run order and verification queries are available in [docs/day2_joint_checkpoint.md](docs/day2_joint_checkpoint.md).
+
+Detailed Day 2 Engineer A Checkpoint Output is available in [docs/day2_engineer_a_checkpoint.md](docs/day2_engineer_a_checkpoint.md).
+
+Detailed Day 2 Engineer B Checkpoint Output is available in [docs/day2_engineer_b_checkpoint.md](docs/day2_engineer_b_checkpoint.md).
