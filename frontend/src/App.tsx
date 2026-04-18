@@ -28,6 +28,21 @@ import { QuickSharePage } from './pages/provider/QuickSharePage';
 import { ErrorPage } from './pages/ErrorPage';
 import { UnauthorizedPage } from './pages/UnauthorizedPage';
 
+function getHomePathByRole(role: string | undefined): string {
+  if (role === 'Provider' || role === 'Admin') {
+    return '/provider/patients';
+  }
+  return '/patient/dashboard';
+}
+
+function RootRedirect() {
+  const { user } = useAuth();
+  if (!user) {
+    return <Navigate to="/auth/login" replace />;
+  }
+  return <Navigate to={getHomePathByRole(user.role)} replace />;
+}
+
 // Wrapper component to initialize API client after auth context is ready
 function AppContent() {
   const { user } = useAuth();
@@ -88,7 +103,7 @@ function AppContent() {
     { path: '/error', element: <ErrorPage /> },
 
     // Root redirect
-    { path: '/', element: <Navigate to="/auth/login" replace /> },
+    { path: '/', element: <RootRedirect /> },
     { path: '*', element: <ErrorPage /> }
   ]);
 

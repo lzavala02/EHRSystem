@@ -21,7 +21,7 @@ interface AuthContextType {
   error: string | null;
   login: (request: LoginRequest) => Promise<{ challenge_id: string }>;
   createAccount: (request: CreateAccountRequest) => Promise<CreateAccountResponse>;
-  verify2FA: (request: TwoFAVerifyRequest) => Promise<void>;
+  verify2FA: (request: TwoFAVerifyRequest) => Promise<User>;
   logout: () => void;
   isAuthenticated: boolean;
 }
@@ -95,6 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const userData = response.data as User;
         setUser(userData);
         localStorage.setItem('auth_session', JSON.stringify(userData));
+        return userData;
       } catch (err) {
         const message = err instanceof Error ? err.message : '2FA verification failed';
         setError(message);

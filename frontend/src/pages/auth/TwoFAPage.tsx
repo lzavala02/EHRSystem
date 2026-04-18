@@ -39,10 +39,13 @@ export function TwoFAPage() {
 
     setLoading(true);
     try {
-      await verify2FA({ challenge_id: challengeId, code });
+      const authenticatedUser = await verify2FA({ challenge_id: challengeId, code });
       sessionStorage.removeItem('challenge_id');
-      // AuthContext automatically stores session, user is redirected by ProtectedRoute
-      navigate('/patient/dashboard');
+      if (authenticatedUser.role === 'Provider' || authenticatedUser.role === 'Admin') {
+        navigate('/provider/patients');
+      } else {
+        navigate('/patient/dashboard');
+      }
     } catch {
       // Error handled by useAuth hook
     } finally {

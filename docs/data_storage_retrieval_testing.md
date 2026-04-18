@@ -42,6 +42,7 @@ docker compose logs --tail 80 db
 Reference checkpoint:
 
 - docs/day2_joint_checkpoint.md
+- docs/day3_engineer_b_checkpoint.md
 
 ### Migration and Seed Execution Order
 
