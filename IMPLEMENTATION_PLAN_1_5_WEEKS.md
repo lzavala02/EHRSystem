@@ -49,10 +49,11 @@ Scope constraints remain unchanged:
 - Engineer A
   - Implement login flow with mandatory OTP/TOTP 2FA.
   - Add RBAC guardrails (Provider, Admin, Patient) and session/token hardening baseline.
+  - Lead frontend auth hardening integration (session expiry behavior, 401/403 routing, and route-guard verification).
 - Engineer B
   - Scaffold feature endpoints behind RBAC (consent, dashboard read APIs, symptom logging, reports, quick-share).
   - Implement frontend auth screens, session handling, and role-aware navigation.
-  - Add initial unit tests against contracts and authorization boundaries.
+  - Add initial frontend unit tests for auth flows and role-aware navigation boundaries.
 - Joint checkpoint output
   - Protected API surface available with auth and role checks passing; frontend can authenticate and route by role.
 
@@ -60,6 +61,7 @@ Scope constraints remain unchanged:
 - Engineer A
   - Implement audit event persistence primitives and shared notification plumbing.
   - Support authorization document generation service integration hooks.
+  - Own frontend-backend contract conformance checks for consent/dashboard payloads and response envelopes.
 - Engineer B
   - Implement end-to-end consent flow: request, in-app patient notification, approve/deny, state transition logging.
   - Build first dashboard slice aggregating provider/patient history from mocked external source responses.
@@ -71,6 +73,7 @@ Scope constraints remain unchanged:
 - Engineer A
   - Build Epic/NextGen adapter base flows for bi-directional push/pull and per-category last-synced timestamps (UTC).
   - Add conflict detection event generation and alert hooks.
+  - Validate frontend environment/runtime configuration for multi-environment API endpoints and deployment-safe defaults.
 - Engineer B
   - Complete dashboard acceptance criteria: at least two external provider sources, consolidated provider list, full medical history, missing-data prompts, patient read-only behavior.
   - Complete dashboard frontend experience for consolidated history, missing-data prompts, and timestamp visibility.
@@ -81,10 +84,11 @@ Scope constraints remain unchanged:
 - Engineer A
   - Complete FHIR R4/HL7 phase-required paths for Epic/NextGen adapters.
   - Wire conflict detection to provider alert generation (manual resolution only).
+  - Implement frontend observability and error-surface hooks for sync/alert retrieval failures.
 - Engineer B
   - Integrate sync outcomes into dashboard freshness/missing-data signals.
   - Surface sync freshness and conflict alerts in frontend provider views.
-  - Add tests for timestamp behavior, conflict alert visibility, and category-level freshness.
+  - Add frontend tests for timestamp behavior, conflict alert visibility, and category-level freshness.
 - Joint checkpoint output
   - Working sync pipeline with conflict alerts and visible sync metadata in API and UI.
 
@@ -92,6 +96,7 @@ Scope constraints remain unchanged:
 - Engineer A
   - Strengthen validation middleware and persistence constraints for chronic disease-specific payload handling.
   - Verify schema constraints align with migration and ORM model behavior.
+  - Verify frontend-backend schema parity for symptom payload validation and error contract handling.
 - Engineer B
   - Implement symptom APIs and business logic enforcing Psoriasis-specific fields and severity rules.
   - Validate triggers against seeded Psoriasis checklist; allow OTC treatment free text.
@@ -103,6 +108,7 @@ Scope constraints remain unchanged:
 - Engineer A
   - Finalize worker/background execution for report generation and secure message dispatch.
   - Add reliability/error handling instrumentation.
+  - Integrate frontend report/quick-share flows into CI smoke checks and release pipeline gates.
 - Engineer B
   - Implement PDF symptom trend report generation and secure in-app sharing.
   - Implement auto-population from most recent prior visit per patient-provider pair.
@@ -116,6 +122,7 @@ Scope constraints remain unchanged:
   - Validate encryption config for data in transit and at rest.
   - Finalize complete audit logging for security-sensitive actions.
   - Execute deployment rehearsal to staging.
+  - Own frontend staging pipeline verification (build, deploy, smoke gating, and rollback validation).
 - Engineer B
   - Run full story-level validation suite across sync, dashboard, symptom reporting, consent, and alerts/quick-share.
   - Run frontend regression suite and cross-browser smoke checks for core user journeys.
@@ -127,10 +134,11 @@ Scope constraints remain unchanged:
 - Engineer A
   - Execute production deployment, post-deploy verification, and rollback readiness checks.
   - Confirm operational runbook and monitoring hooks.
+  - Execute frontend production deployment verification and release-gate sign-off from platform perspective.
 - Engineer B
   - Run must-pass regression and business acceptance checks.
   - Validate final user-facing workflows and data integrity.
-  - Execute final frontend production build, deployment verification, and usability sign-off.
+  - Execute final frontend usability and workflow sign-off from product/UX perspective.
 - Joint checkpoint output
   - Deployment-ready V1 live with production frontend and Phase 2 backlog frozen with priorities and owners.
 
@@ -141,6 +149,30 @@ Scope constraints remain unchanged:
 - Include loading, empty, error, and retry states for every critical data retrieval screen.
 - Add frontend unit/component tests plus end-to-end happy-path checks for consent, dashboard, symptoms, and quick-share.
 - Integrate frontend build and smoke validation into CI/CD before staging and production promotion.
+
+### Remaining Frontend Tasks (Post-Day-2) - Even Split
+
+Day 2 frontend implementation by Engineer B is complete for the core patient/provider pages and shared app shell.
+The remaining frontend work from Day 3 onward is split evenly between Engineer A and Engineer B.
+
+Engineer A (Frontend Platform, Integration, and Release)
+- Own frontend-backend contract conformance checks and response envelope alignment during Day 3-8 integration.
+- Own frontend authentication and authorization hardening integration (2FA edge cases, route protection verification, token/session expiry behavior).
+- Own frontend build/deploy pipeline integration in CI/CD, including staging smoke gates and production promotion checks.
+- Own runtime configuration management for frontend environments (dev/staging/prod variables and deployment-safe defaults).
+- Own observability hooks for frontend production readiness (error capture plumbing and release verification checks).
+
+Engineer B (Frontend Product Workflow, UX, and Validation)
+- Own continued enhancement of patient/provider workflow UIs tied to Day 4-8 feature completion.
+- Own loading/error/empty/retry UX completion across all story-critical screens.
+- Own frontend test authoring for workflow behavior (unit/component/integration happy paths and failure paths).
+- Own cross-browser workflow validation and usability pass for core journeys.
+- Own final user-facing regression and acceptance validation for consent, dashboard, symptom logging, reports, alerts, and quick-share.
+
+Shared (Equal Accountability)
+- Pair-review all frontend PRs with one reviewer required from the other engineer.
+- Resolve frontend-backend contract drift within the same day it is detected.
+- Triage frontend defects together by release-blocking vs non-blocking severity.
 
 ### Frontend Access Instructions for Engineer A
 
