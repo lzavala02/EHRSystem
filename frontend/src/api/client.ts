@@ -33,7 +33,15 @@ export function initializeApiClient(getAuthToken: () => string | null): AxiosIns
   // Request interceptor: inject auth token
   client.interceptors.request.use(
     (config: InternalAxiosRequestConfig) => {
-      const token = getAuthToken();
+      let persistedToken: string | null = null;
+      try {
+        const sessionFromStorage = localStorage.getItem('auth_session');
+        const parsedSession = sessionFromStorage ? JSON.parse(sessionFromStorage) : null;
+        persistedToken = parsedSession?.session_token ?? null;
+      } catch {
+        persistedToken = null;
+      }
+      const token = getAuthToken() || persistedToken || null;
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
