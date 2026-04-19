@@ -32,3 +32,4 @@ If the backend is running on a different host or port, update `VITE_API_URL` in 
 
 - The frontend lives in the [frontend](../frontend) directory.
 - A production build also works from `frontend` with `npm run build`.
+- Login for the Test Client: email:patient@example.com, password: Passw0rd!, code: 123456
