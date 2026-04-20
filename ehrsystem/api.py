@@ -106,6 +106,12 @@ class ConsentDecisionRequest(BaseModel):
     decision: Literal["Approve", "Deny"]
 
 
+class ConsentCreateRequest(BaseModel):
+    patient_id: str
+    reason: str
+    provider_id: str | None = None
+
+
 class SymptomLogCreateRequest(BaseModel):
     patient_id: str
     symptom_description: str
@@ -198,32 +204,53 @@ PATIENTS = [
 ]
 PATIENT_BY_ID = {patient.patient_id: patient for patient in PATIENTS}
 
-MEDICAL_RECORDS = [
-    MedicalRecordItem(
-        record_id="rec-1",
-        patient_id="pat-1",
-        system_id="sys-epic",
-        category="Medications",
-        value_description="Topical corticosteroid",
-        recorded_at=datetime(2026, 4, 10, 13, 30, tzinfo=UTC),
-    ),
-    MedicalRecordItem(
-        record_id="rec-2",
-        patient_id="pat-1",
-        system_id="sys-nextgen",
-        category="Labs",
-        value_description="Inflammation markers within expected range",
-        recorded_at=datetime(2026, 4, 11, 16, 15, tzinfo=UTC),
-    ),
-    MedicalRecordItem(
-        record_id="rec-3",
-        patient_id="pat-2",
-        system_id="sys-epic",
-        category="Diagnoses",
-        value_description="Psoriasis flare documented",
-        recorded_at=datetime(2026, 4, 9, 9, 0, tzinfo=UTC),
-    ),
-]
+MOCK_EXTERNAL_SOURCE_RESPONSES: dict[str, list[dict[str, object]]] = {
+    "sys-epic": [
+        {
+            "record_id": "rec-1",
+            "patient_id": "pat-1",
+            "category": "Medications",
+            "value_description": "Topical corticosteroid",
+            "recorded_at": datetime(2026, 4, 10, 13, 30, tzinfo=UTC),
+        },
+        {
+            "record_id": "rec-3",
+            "patient_id": "pat-2",
+            "category": "Diagnoses",
+            "value_description": "Psoriasis flare documented",
+            "recorded_at": datetime(2026, 4, 9, 9, 0, tzinfo=UTC),
+        },
+    ],
+    "sys-nextgen": [
+        {
+            "record_id": "rec-2",
+            "patient_id": "pat-1",
+            "category": "Labs",
+            "value_description": "Inflammation markers within expected range",
+            "recorded_at": datetime(2026, 4, 11, 16, 15, tzinfo=UTC),
+        }
+    ],
+}
+
+
+def _build_medical_records_from_mock_sources() -> list[MedicalRecordItem]:
+    records: list[MedicalRecordItem] = []
+    for system_id, source_items in MOCK_EXTERNAL_SOURCE_RESPONSES.items():
+        for source_item in source_items:
+            records.append(
+                MedicalRecordItem(
+                    record_id=str(source_item["record_id"]),
+                    patient_id=str(source_item["patient_id"]),
+                    system_id=system_id,
+                    category=str(source_item["category"]),
+                    value_description=str(source_item["value_description"]),
+                    recorded_at=source_item["recorded_at"],  # type: ignore[arg-type]
+                )
+            )
+    return records
+
+
+MEDICAL_RECORDS = _build_medical_records_from_mock_sources()
 SYSTEM_NAME_BY_ID = {
     "sys-epic": "Epic",
     "sys-nextgen": "NextGen",
@@ -606,7 +633,7 @@ def list_consent_requests(
         context="consent.requests",
     )
     ensure_list_item_required_keys(
-        payload["requests"],
+        payload["requests"],  # type: ignore[arg-type]
         required_keys={
             "request_id",
             "patient_id",
@@ -620,6 +647,73 @@ def list_consent_requests(
         context="consent.requests",
     )
     return payload
+
+
+@router.post("/consent/requests", status_code=status.HTTP_201_CREATED)
+def create_consent_request(
+    payload: ConsentCreateRequest,
+    user: Annotated[UserRecord, Depends(require_roles("Provider", "Admin"))],
+) -> dict[str, str]:
+    if payload.patient_id not in PATIENT_BY_ID:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
+        )
+
+    effective_provider_id = (
+        user.provider_id if user.role == "Provider" else payload.provider_id
+    )
+    if effective_provider_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="provider_id is required",
+        )
+
+    provider = PROVIDER_BY_ID.get(effective_provider_id)
+    if provider is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found"
+        )
+
+    access_request = CONSENT_SERVICE.create_access_request(
+        patient_id=payload.patient_id,
+        provider_id=effective_provider_id,
+    )
+
+    CONSENT_REQUEST_METADATA[access_request.request_id] = {
+        "provider_name": provider.name,
+        "provider_specialty": provider.specialty or "Unknown",
+        "reason": payload.reason.strip() or "Clinical record access request",
+    }
+
+    CONSENT_SERVICE.notify_patient(access_request.request_id)
+
+    response_payload = {
+        "request_id": access_request.request_id,
+        "patient_id": access_request.patient_id,
+        "provider_id": access_request.provider_id,
+        "provider_name": provider.name,
+        "provider_specialty": provider.specialty or "Unknown",
+        "reason": CONSENT_REQUEST_METADATA[access_request.request_id]["reason"],
+        "status": access_request.status,
+        "requested_at": access_request.requested_at.isoformat()
+        if access_request.requested_at
+        else _utc_now().isoformat(),
+    }
+    ensure_required_keys(
+        response_payload,
+        required_keys={
+            "request_id",
+            "patient_id",
+            "provider_id",
+            "provider_name",
+            "provider_specialty",
+            "reason",
+            "status",
+            "requested_at",
+        },
+        context="consent.request.create",
+    )
+    return response_payload
 
 
 @router.post("/consent/requests/{request_id}/decision")
@@ -668,7 +762,8 @@ def get_patient_dashboard(
         )
 
     snapshot = DASHBOARD_SERVICE.build_dashboard(patient_id)
-    medical_history = []
+    patient = PATIENT_BY_ID[patient_id]
+    medical_history: list[dict[str, str]] = []
     for item in snapshot.medical_history:
         medical_history.append(
             {
@@ -681,8 +776,29 @@ def get_patient_dashboard(
             }
         )
 
+    source_systems: list[dict[str, str]] = []
+    seen_system_ids: set[str] = set()
+    for history_item in medical_history:
+        system_id = str(history_item["system_id"])
+        if system_id in seen_system_ids:
+            continue
+        seen_system_ids.add(system_id)
+        source_systems.append(
+            {
+                "system_id": system_id,
+                "system_name": str(history_item["system_name"]),
+            }
+        )
+
     payload: dict[str, object] = {
         "patient_id": snapshot.patient_id,
+        "patient_profile": {
+            "height": patient.height,
+            "weight": patient.weight,
+            "vaccination_record": patient.vaccination_record,
+            "family_history": patient.family_history,
+        },
+        "source_systems": source_systems,
         "providers": [
             {
                 "provider_id": provider.provider_id,
@@ -700,11 +816,28 @@ def get_patient_dashboard(
     }
     ensure_required_keys(
         payload,
-        required_keys={"patient_id", "providers", "medical_history", "missing_data"},
+        required_keys={
+            "patient_id",
+            "patient_profile",
+            "source_systems",
+            "providers",
+            "medical_history",
+            "missing_data",
+        },
         context="dashboard.snapshot",
     )
+    ensure_required_keys(
+        payload["patient_profile"],  # type: ignore[arg-type]
+        required_keys={"height", "weight", "vaccination_record", "family_history"},
+        context="dashboard.snapshot.patient_profile",
+    )
     ensure_list_item_required_keys(
-        payload["providers"],
+        payload["source_systems"],  # type: ignore[arg-type]
+        required_keys={"system_id", "system_name"},
+        context="dashboard.snapshot.source_systems",
+    )
+    ensure_list_item_required_keys(
+        payload["providers"],  # type: ignore[arg-type]
         required_keys={
             "provider_id",
             "provider_name",
@@ -714,7 +847,7 @@ def get_patient_dashboard(
         context="dashboard.snapshot.providers",
     )
     ensure_list_item_required_keys(
-        payload["medical_history"],
+        payload["medical_history"],  # type: ignore[arg-type]
         required_keys={
             "record_id",
             "category",
@@ -726,7 +859,7 @@ def get_patient_dashboard(
         context="dashboard.snapshot.medical_history",
     )
     ensure_list_item_required_keys(
-        payload["missing_data"],
+        payload["missing_data"],  # type: ignore[arg-type]
         required_keys={"field_name", "reason"},
         context="dashboard.snapshot.missing_data",
     )
@@ -761,12 +894,12 @@ def get_patient_dashboard_sync_status(
         ],
     }
     ensure_required_keys(
-        payload,
+        payload,  # type: ignore[arg-type]
         required_keys={"patient_id", "sync_status"},
         context="dashboard.sync_status",
     )
     ensure_list_item_required_keys(
-        payload["sync_status"],
+        payload["sync_status"],  # type: ignore[arg-type]
         required_keys={"category", "last_synced_at", "system_id", "system_name"},
         context="dashboard.sync_status.items",
     )

@@ -131,8 +131,22 @@ export interface MissingDataField {
   reason: string;
 }
 
+export interface DashboardPatientProfile {
+  height: number | null;
+  weight: number | null;
+  vaccination_record: string | null;
+  family_history: string | null;
+}
+
+export interface DashboardSourceSystem {
+  system_id: string;
+  system_name: string;
+}
+
 export interface DashboardSnapshot {
   patient_id: string;
+  patient_profile: DashboardPatientProfile;
+  source_systems: DashboardSourceSystem[];
   providers: Provider[];
   medical_history: MedicalRecord[];
   missing_data: MissingDataField[];

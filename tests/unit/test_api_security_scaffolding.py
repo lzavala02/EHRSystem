@@ -104,6 +104,25 @@ def test_provider_can_use_report_and_quick_share_routes() -> None:
     assert quick_share_response.json()["status"] == "pending"
 
 
+def test_patient_cannot_create_consent_request() -> None:
+    """Patients should not be allowed to create provider consent requests."""
+
+    client = TestClient(api.app)
+    token = _login_and_get_token(client, email="patient@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.post(
+        "/v1/consent/requests",
+        headers=headers,
+        json={
+            "patient_id": "pat-1",
+            "reason": "Attempting unauthorized creation",
+        },
+    )
+
+    assert response.status_code == 403
+
+
 def test_alias_api_prefix_matches_v1_routes() -> None:
     """The /api/v1 alias should expose the same protected API surface."""
 

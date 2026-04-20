@@ -14,6 +14,8 @@ const navigationByRole = {
   ],
   Provider: [
     { label: 'Patients', path: '/provider/patients', icon: '👥' },
+    { label: 'Dashboard', path: '/provider/dashboard', icon: '📊' },
+    { label: 'Request Consent', path: '/provider/consent/requests/new', icon: '📝' },
     { label: 'Alerts', path: '/provider/alerts', icon: '⚠️' },
     { label: 'Quick-Share', path: '/provider/quick-share', icon: '📤' }
   ],

@@ -5,6 +5,40 @@ import { useFetch } from '../../hooks/useFetch';
 import { DashboardSnapshot, DashboardSyncStatus } from '../../types/api';
 import { formatUtcTimestamp, getRelativeTime, isStale } from '../../utils/date';
 
+function formatHeightFeetInches(heightCm: number | null): string {
+  if (heightCm === null) {
+    return 'Missing';
+  }
+
+  const totalInches = heightCm / 2.54;
+  let feet = Math.floor(totalInches / 12);
+  let inches = Math.round(totalInches - feet * 12);
+
+  if (inches === 12) {
+    feet += 1;
+    inches = 0;
+  }
+
+  return `${feet} ft ${inches} in`;
+}
+
+function formatWeightPoundsOunces(weightKg: number | null): string {
+  if (weightKg === null) {
+    return 'Missing';
+  }
+
+  const totalPounds = weightKg * 2.2046226218;
+  let pounds = Math.floor(totalPounds);
+  let ounces = Math.round((totalPounds - pounds) * 16);
+
+  if (ounces === 16) {
+    pounds += 1;
+    ounces = 0;
+  }
+
+  return `${pounds} lb ${ounces} oz`;
+}
+
 export function PatientDashboardPage() {
   const { user } = useAuth();
   const patientId = user?.patient_id;
@@ -39,6 +73,18 @@ export function PatientDashboardPage() {
     await Promise.all([refetchDashboard(), refetchSync()]);
   };
 
+  const providers = dashboard?.providers ?? [];
+  const medicalHistory = dashboard?.medical_history ?? [];
+  const sourceSystems = dashboard?.source_systems ?? [];
+  const missingData = dashboard?.missing_data ?? [];
+  const patientProfile = dashboard?.patient_profile ?? {
+    height: null,
+    weight: null,
+    vaccination_record: null,
+    family_history: null
+  };
+  const syncEntries = syncStatus?.sync_status ?? [];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -66,30 +112,94 @@ export function PatientDashboardPage() {
             <div className="bg-white rounded-lg shadow p-5 border border-clinical-100">
               <p className="text-sm text-clinical-500">Connected Providers</p>
               <p className="text-3xl font-semibold text-clinical-900 mt-1">
-                {dashboard.providers.length}
+                {providers.length}
               </p>
             </div>
             <div className="bg-white rounded-lg shadow p-5 border border-clinical-100">
               <p className="text-sm text-clinical-500">Medical Records</p>
               <p className="text-3xl font-semibold text-clinical-900 mt-1">
-                {dashboard.medical_history.length}
+                {medicalHistory.length}
+              </p>
+            </div>
+            <div className="bg-white rounded-lg shadow p-5 border border-clinical-100">
+              <p className="text-sm text-clinical-500">Connected Source Systems</p>
+              <p className="text-3xl font-semibold text-clinical-900 mt-1">
+                {sourceSystems.length}
               </p>
             </div>
             <div className="bg-white rounded-lg shadow p-5 border border-clinical-100">
               <p className="text-sm text-clinical-500">Missing Data Prompts</p>
               <p className="text-3xl font-semibold text-health-warning mt-1">
-                {dashboard.missing_data.length}
+                {missingData.length}
               </p>
             </div>
           </section>
 
           <section className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-xl font-semibold text-clinical-900 mb-4">Patient Health Profile</h2>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="border border-clinical-200 rounded-lg p-4">
+                <p className="text-sm text-clinical-500">Height</p>
+                <p className="font-medium text-clinical-900">
+                  {formatHeightFeetInches(patientProfile.height)}
+                </p>
+                {patientProfile.height !== null && (
+                  <p className="text-xs text-clinical-500 mt-1">
+                    {patientProfile.height} cm
+                  </p>
+                )}
+              </div>
+              <div className="border border-clinical-200 rounded-lg p-4">
+                <p className="text-sm text-clinical-500">Weight</p>
+                <p className="font-medium text-clinical-900">
+                  {formatWeightPoundsOunces(patientProfile.weight)}
+                </p>
+                {patientProfile.weight !== null && (
+                  <p className="text-xs text-clinical-500 mt-1">
+                    {patientProfile.weight} kg
+                  </p>
+                )}
+              </div>
+              <div className="border border-clinical-200 rounded-lg p-4">
+                <p className="text-sm text-clinical-500">Vaccination Record</p>
+                <p className="font-medium text-clinical-900">
+                  {patientProfile.vaccination_record ?? 'Missing'}
+                </p>
+              </div>
+              <div className="border border-clinical-200 rounded-lg p-4">
+                <p className="text-sm text-clinical-500">Family History</p>
+                <p className="font-medium text-clinical-900">
+                  {patientProfile.family_history ?? 'Missing'}
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-xl font-semibold text-clinical-900 mb-4">External Data Sources</h2>
+            {sourceSystems.length === 0 ? (
+              <p className="text-clinical-600">No connected source systems yet.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {sourceSystems.map((source) => (
+                  <span
+                    key={source.system_id}
+                    className="inline-flex px-3 py-1 text-sm rounded-full bg-clinical-100 text-clinical-800"
+                  >
+                    {source.system_name}
+                  </span>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="bg-white rounded-lg shadow p-6">
             <h2 className="text-xl font-semibold text-clinical-900 mb-4">Provider Team</h2>
-            {dashboard.providers.length === 0 ? (
+            {providers.length === 0 ? (
               <p className="text-clinical-600">No providers found yet.</p>
             ) : (
               <div className="grid gap-3 md:grid-cols-2">
-                {dashboard.providers.map((provider) => (
+                {providers.map((provider) => (
                   <div key={provider.provider_id} className="border border-clinical-200 rounded-lg p-4">
                     <p className="font-medium text-clinical-900">{provider.provider_name}</p>
                     <p className="text-sm text-clinical-600">{provider.specialty}</p>
@@ -102,7 +212,7 @@ export function PatientDashboardPage() {
 
           <section className="bg-white rounded-lg shadow p-6">
             <h2 className="text-xl font-semibold text-clinical-900 mb-4">Recent Medical History</h2>
-            {dashboard.medical_history.length === 0 ? (
+            {medicalHistory.length === 0 ? (
               <p className="text-clinical-600">No medical records available.</p>
             ) : (
               <div className="overflow-x-auto">
@@ -116,7 +226,7 @@ export function PatientDashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {dashboard.medical_history.map((record) => (
+                    {medicalHistory.map((record) => (
                       <tr key={record.record_id} className="border-b border-clinical-100 align-top">
                         <td className="py-2 pr-3 font-medium text-clinical-900">{record.category}</td>
                         <td className="py-2 pr-3 text-clinical-700">{record.value_description}</td>
@@ -132,9 +242,9 @@ export function PatientDashboardPage() {
 
           <section className="bg-white rounded-lg shadow p-6">
             <h2 className="text-xl font-semibold text-clinical-900 mb-4">Data Sync Freshness</h2>
-            {syncStatus?.sync_status.length ? (
+            {syncEntries.length ? (
               <ul className="space-y-3">
-                {syncStatus.sync_status.map((entry) => {
+                {syncEntries.map((entry) => {
                   const stale = isStale(entry.last_synced_at, 24);
                   return (
                     <li
@@ -167,11 +277,11 @@ export function PatientDashboardPage() {
             )}
           </section>
 
-          {dashboard.missing_data.length > 0 && (
+          {missingData.length > 0 && (
             <section className="bg-health-warning/10 border border-health-warning rounded-lg p-6">
               <h2 className="text-xl font-semibold text-clinical-900 mb-4">Missing Data Prompts</h2>
               <ul className="space-y-2">
-                {dashboard.missing_data.map((item) => (
+                {missingData.map((item) => (
                   <li key={`${item.field_name}-${item.reason}`} className="text-clinical-700">
                     <span className="font-medium">{item.field_name}:</span> {item.reason}
                   </li>

@@ -23,6 +23,8 @@ import { SharedReportsPage } from './pages/patient/SharedReportsPage';
 import { PatientListPage } from './pages/provider/PatientListPage';
 import { AlertsDashboardPage } from './pages/provider/AlertsDashboardPage';
 import { QuickSharePage } from './pages/provider/QuickSharePage';
+import { ProviderPatientDashboardPage } from './pages/provider/PatientDashboardPage';
+import { ConsentRequestCreatePage } from './pages/provider/ConsentRequestCreatePage';
 
 // Error pages
 import { ErrorPage } from './pages/ErrorPage';
@@ -90,6 +92,8 @@ function AppContent() {
       ),
       children: [
         { path: 'patients', element: <PatientListPage /> },
+        { path: 'dashboard', element: <ProviderPatientDashboardPage /> },
+        { path: 'consent/requests/new', element: <ConsentRequestCreatePage /> },
         { path: 'alerts', element: <AlertsDashboardPage /> },
         { path: 'quick-share', element: <QuickSharePage /> }
       ]

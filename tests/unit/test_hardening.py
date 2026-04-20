@@ -2,8 +2,7 @@
 
 from fastapi.testclient import TestClient
 
-from ehrsystem import api
-
+from ehrsystem import api  # noqa: F401
 
 REQUIRED_CONSENT_REQUEST_KEYS = {
     "request_id",
@@ -18,9 +17,23 @@ REQUIRED_CONSENT_REQUEST_KEYS = {
 
 REQUIRED_DASHBOARD_KEYS = {
     "patient_id",
+    "patient_profile",
+    "source_systems",
     "providers",
     "medical_history",
     "missing_data",
+}
+
+REQUIRED_PATIENT_PROFILE_KEYS = {
+    "height",
+    "weight",
+    "vaccination_record",
+    "family_history",
+}
+
+REQUIRED_SOURCE_SYSTEM_KEYS = {
+    "system_id",
+    "system_name",
 }
 
 REQUIRED_PROVIDER_KEYS = {
@@ -69,7 +82,9 @@ def test_seeded_consent_notifications_and_audit_events_exist() -> None:
 
     seeded_request_ids = set(api.CONSENT_REQUEST_METADATA.keys())
     notifications = api.NOTIFICATION_DISPATCHER.list_notifications(recipient_id="pat-1")
-    audit_events = api.AUDIT_EVENT_STORE.list_events(event_type="consent.request.notified")
+    audit_events = api.AUDIT_EVENT_STORE.list_events(
+        event_type="consent.request.notified"
+    )
 
     assert len(seeded_request_ids) >= 2
     assert len(notifications) >= len(seeded_request_ids)
@@ -118,6 +133,53 @@ def test_consent_decision_endpoint_keeps_contract_and_records_audit() -> None:
     assert after_count == before_count + 1
 
 
+def test_provider_can_create_consent_request_with_notification_and_audit() -> None:
+    """Provider should be able to create a request and trigger Day 4 traces."""
+
+    client = TestClient(api.app)
+    token = _login_and_get_token(client, email="provider@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    before_created_count = len(
+        api.AUDIT_EVENT_STORE.list_events(event_type="consent.request.created")
+    )
+    before_notified_count = len(
+        api.AUDIT_EVENT_STORE.list_events(event_type="consent.request.notified")
+    )
+
+    response = client.post(
+        "/v1/consent/requests",
+        headers=headers,
+        json={
+            "patient_id": "pat-1",
+            "reason": "Dermatology follow-up review",
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert REQUIRED_CONSENT_REQUEST_KEYS.issubset(payload)
+    assert payload["patient_id"] == "pat-1"
+    assert payload["provider_id"] == "prov-pcp"
+    assert payload["status"] == "Pending"
+
+    request_id = payload["request_id"]
+    notifications = api.NOTIFICATION_DISPATCHER.list_notifications(recipient_id="pat-1")
+    assert any(
+        notification.metadata.get("request_id") == request_id
+        for notification in notifications
+    )
+
+    after_created_count = len(
+        api.AUDIT_EVENT_STORE.list_events(event_type="consent.request.created")
+    )
+    after_notified_count = len(
+        api.AUDIT_EVENT_STORE.list_events(event_type="consent.request.notified")
+    )
+    assert after_created_count == before_created_count + 1
+    assert after_notified_count == before_notified_count + 1
+
+
 def test_dashboard_snapshot_contract_matches_frontend_expectations() -> None:
     """Dashboard response should preserve the Day 2/3 frontend payload contract."""
 
@@ -130,6 +192,14 @@ def test_dashboard_snapshot_contract_matches_frontend_expectations() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert REQUIRED_DASHBOARD_KEYS.issubset(payload)
+
+    profile = payload["patient_profile"]
+    assert REQUIRED_PATIENT_PROFILE_KEYS.issubset(profile)
+
+    source_systems = payload["source_systems"]
+    assert source_systems
+    assert REQUIRED_SOURCE_SYSTEM_KEYS.issubset(source_systems[0])
+    assert {entry["system_name"] for entry in source_systems} >= {"Epic", "NextGen"}
 
     providers = payload["providers"]
     assert providers
