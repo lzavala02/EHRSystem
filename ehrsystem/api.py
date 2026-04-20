@@ -18,9 +18,12 @@ from redis import Redis
 from .alerts import ProviderAlertService
 from .config import load_settings
 from .consent import ConsentWorkflowService
+from .contracts import ensure_list_item_required_keys, ensure_required_keys
 from .dashboard import UnifiedChronicDiseaseDashboardService
+from .events import InMemoryAuditEventStore, InMemoryNotificationDispatcher
 from .fixtures import PSORIASIS_TRIGGER_CHECKLIST
 from .models import (
+    AccessRequest,
     MedicalRecordItem,
     Patient,
     Provider,
@@ -257,7 +260,62 @@ DASHBOARD_SERVICE = UnifiedChronicDiseaseDashboardService(
     care_team_by_patient={"pat-1": ["prov-derm"], "pat-2": []},
 )
 
-CONSENT_SERVICE = ConsentWorkflowService()
+AUDIT_EVENT_STORE = InMemoryAuditEventStore()
+NOTIFICATION_DISPATCHER = InMemoryNotificationDispatcher()
+
+
+def _record_audit_event(
+    event_type: str,
+    actor_id: str | None,
+    target_id: str | None,
+    metadata: dict[str, str],
+) -> None:
+    AUDIT_EVENT_STORE.record_event(
+        event_type=event_type,
+        actor_id=actor_id,
+        target_id=target_id,
+        metadata=metadata,
+    )
+
+
+def _dispatch_consent_notification(access_request: AccessRequest) -> None:
+    NOTIFICATION_DISPATCHER.send(
+        channel="in_app",
+        recipient_id=access_request.patient_id,
+        subject="New consent request",
+        body=(
+            "A provider has requested access to your record. "
+            "Review and respond in the consent center."
+        ),
+        metadata={
+            "request_id": access_request.request_id,
+            "provider_id": access_request.provider_id,
+        },
+    )
+
+
+def _generate_authorization_document(access_request: AccessRequest) -> str:
+    approved_at = (
+        access_request.responded_at.isoformat()
+        if access_request.responded_at is not None
+        else "Pending"
+    )
+    return (
+        "HIPAA Digital Authorization Document\n"
+        f"Request ID: {access_request.request_id}\n"
+        f"Patient ID: {access_request.patient_id}\n"
+        f"Provider ID: {access_request.provider_id}\n"
+        f"Approved At: {approved_at}\n"
+        "Document Service: internal-consent-docs-v1\n"
+        "This document records patient-approved access to protected health information."
+    )
+
+
+CONSENT_SERVICE = ConsentWorkflowService(
+    audit_recorder=_record_audit_event,
+    notification_sender=_dispatch_consent_notification,
+    document_generator=_generate_authorization_document,
+)
 CONSENT_REQUEST_METADATA: dict[str, dict[str, str]] = {}
 
 for patient_id, provider_id, reason in [
@@ -271,6 +329,7 @@ for patient_id, provider_id, reason in [
         "provider_specialty": provider.specialty or "Unknown",
         "reason": reason,
     }
+    CONSENT_SERVICE.notify_patient(seeded_request.request_id)
 
 TRIGGER_CHECKLIST: list[Trigger] = [
     Trigger(trigger_id=f"trig-{index}", trigger_name=name)
@@ -540,7 +599,27 @@ def list_consent_requests(
                 ),
             }
         )
-    return {"requests": requests}
+    payload: dict[str, list[dict[str, str]]] = {"requests": requests}
+    ensure_required_keys(
+        payload,
+        required_keys={"requests"},
+        context="consent.requests",
+    )
+    ensure_list_item_required_keys(
+        payload["requests"],
+        required_keys={
+            "request_id",
+            "patient_id",
+            "provider_id",
+            "provider_name",
+            "provider_specialty",
+            "reason",
+            "status",
+            "requested_at",
+        },
+        context="consent.requests",
+    )
+    return payload
 
 
 @router.post("/consent/requests/{request_id}/decision")
@@ -558,13 +637,22 @@ def decide_consent_request(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
     updated = CONSENT_SERVICE.respond_to_request(request_id, payload.decision)
-    return {
+    if updated.status == "Approved":
+        CONSENT_SERVICE.generate_digital_authorization_document(request_id)
+
+    response_payload = {
         "request_id": updated.request_id,
         "status": updated.status,
         "responded_at": updated.responded_at.isoformat()
         if updated.responded_at
         else _utc_now().isoformat(),
     }
+    ensure_required_keys(
+        response_payload,
+        required_keys={"request_id", "status", "responded_at"},
+        context="consent.decision",
+    )
+    return response_payload
 
 
 @router.get("/dashboard/patients/{patient_id}")
@@ -593,7 +681,7 @@ def get_patient_dashboard(
             }
         )
 
-    return {
+    payload: dict[str, object] = {
         "patient_id": snapshot.patient_id,
         "providers": [
             {
@@ -610,6 +698,39 @@ def get_patient_dashboard(
             for field in snapshot.missing_data
         ],
     }
+    ensure_required_keys(
+        payload,
+        required_keys={"patient_id", "providers", "medical_history", "missing_data"},
+        context="dashboard.snapshot",
+    )
+    ensure_list_item_required_keys(
+        payload["providers"],
+        required_keys={
+            "provider_id",
+            "provider_name",
+            "specialty",
+            "clinic_affiliation",
+        },
+        context="dashboard.snapshot.providers",
+    )
+    ensure_list_item_required_keys(
+        payload["medical_history"],
+        required_keys={
+            "record_id",
+            "category",
+            "value_description",
+            "recorded_at",
+            "system_id",
+            "system_name",
+        },
+        context="dashboard.snapshot.medical_history",
+    )
+    ensure_list_item_required_keys(
+        payload["missing_data"],
+        required_keys={"field_name", "reason"},
+        context="dashboard.snapshot.missing_data",
+    )
+    return payload
 
 
 @router.get("/dashboard/patients/{patient_id}/sync-status")
@@ -627,7 +748,7 @@ def get_patient_dashboard_sync_status(
             detail="Patient sync status not found",
         )
 
-    return {
+    payload: dict[str, object] = {
         "patient_id": patient_id,
         "sync_status": [
             {
@@ -639,6 +760,17 @@ def get_patient_dashboard_sync_status(
             for entry in status_entries
         ],
     }
+    ensure_required_keys(
+        payload,
+        required_keys={"patient_id", "sync_status"},
+        context="dashboard.sync_status",
+    )
+    ensure_list_item_required_keys(
+        payload["sync_status"],
+        required_keys={"category", "last_synced_at", "system_id", "system_name"},
+        context="dashboard.sync_status.items",
+    )
+    return payload
 
 
 @router.get("/symptoms/triggers")
