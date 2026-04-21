@@ -573,6 +573,18 @@ def require_roles(
     return _role_dependency
 
 
+@app.get("/")
+def root() -> dict[str, str]:
+    """Default API landing route for platform checks and quick discovery."""
+
+    return {
+        "service": "api",
+        "status": "ok",
+        "health": "/health",
+        "docs": "/docs",
+    }
+
+
 @app.get("/health/live")
 def liveness() -> dict[str, str]:
     """Container/process level health check."""
