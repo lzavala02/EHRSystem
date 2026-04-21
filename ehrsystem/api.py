@@ -1301,8 +1301,8 @@ app.include_router(router, prefix="/api/v1")
 
 
 # Serve frontend for client-side routing
-@app.get("/{full_path:path}", response_class=FileResponse)
-def serve_frontend(full_path: str) -> FileResponse | dict[str, str]:
+@app.get("/{full_path:path}", response_class=FileResponse, response_model=None)
+def serve_frontend(full_path: str):
     """Serve frontend SPA. For unmapped routes, serve index.html for client-side routing."""
     # If file extension exists, it's a static asset request - let 404 happen naturally
     if "." in full_path.split("/")[-1]:
