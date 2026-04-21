@@ -42,6 +42,7 @@ function formatWeightPoundsOunces(weightKg: number | null): string {
 export function PatientDashboardPage() {
   const { user } = useAuth();
   const patientId = user?.patient_id;
+  const isPatientReadOnly = user?.role === 'Patient';
 
   const {
     data: dashboard,
@@ -99,6 +100,16 @@ export function PatientDashboardPage() {
           Refresh
         </button>
       </div>
+
+      {isPatientReadOnly && (
+        <section className="rounded-lg border border-clinical-200 bg-clinical-50 p-4">
+          <p className="text-sm font-semibold text-clinical-900">Patient read-only view</p>
+          <p className="mt-1 text-sm text-clinical-700">
+            Provider-only actions are hidden here. You can review consolidated history, source systems, and sync status,
+            but editing workflows stay on the provider side.
+          </p>
+        </section>
+      )}
 
       {(dashboardError || syncError) && (
         <ErrorAlert

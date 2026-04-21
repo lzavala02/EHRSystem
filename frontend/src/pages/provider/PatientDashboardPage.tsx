@@ -118,6 +118,14 @@ export function ProviderPatientDashboardPage() {
         </button>
       </div>
 
+      <section className="rounded-lg border border-clinical-200 bg-clinical-50 p-4">
+        <p className="text-sm font-semibold text-clinical-900">Morning integration slice</p>
+        <p className="mt-1 text-sm text-clinical-700">
+          This view is wired for two external sources, consolidated provider history, missing-data prompts,
+          and UTC sync timestamps so midday integration can validate the live payload contract.
+        </p>
+      </section>
+
       <section className="bg-white rounded-lg shadow p-6">
         <label htmlFor="provider-dashboard-patient" className="block text-sm font-medium text-clinical-700 mb-2">
           Selected patient
@@ -171,6 +179,58 @@ export function ProviderPatientDashboardPage() {
               <p className="text-sm text-clinical-500">Missing Data Prompts</p>
               <p className="text-3xl font-semibold text-health-warning mt-1">{dashboard.missing_data.length}</p>
             </div>
+          </section>
+
+          <section className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-xl font-semibold text-clinical-900 mb-4">External Data Sources</h2>
+            {dashboard.source_systems.length === 0 ? (
+              <p className="text-clinical-600">No connected source systems yet.</p>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2">
+                {dashboard.source_systems.map((source) => (
+                  <div key={source.system_id} className="border border-clinical-200 rounded-lg p-4">
+                    <p className="font-medium text-clinical-900">{source.system_name}</p>
+                    <p className="text-sm text-clinical-600">Source ID: {source.system_id}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-xl font-semibold text-clinical-900 mb-4">Provider Team</h2>
+            {dashboard.providers.length === 0 ? (
+              <p className="text-clinical-600">No providers found yet.</p>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2">
+                {dashboard.providers.map((provider) => (
+                  <div key={provider.provider_id} className="border border-clinical-200 rounded-lg p-4">
+                    <p className="font-medium text-clinical-900">{provider.provider_name}</p>
+                    <p className="text-sm text-clinical-600">{provider.specialty}</p>
+                    <p className="text-sm text-clinical-500">{provider.clinic_affiliation}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-xl font-semibold text-clinical-900 mb-4">Missing Data Prompts</h2>
+            {dashboard.missing_data.length === 0 ? (
+              <p className="text-clinical-600">No missing-data prompts at the moment.</p>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2">
+                {dashboard.missing_data.map((field) => (
+                  <div
+                    key={field.field_name}
+                    className="rounded-lg border border-health-warning/30 bg-health-warning/10 p-4"
+                  >
+                    <p className="font-medium text-clinical-900">{field.field_name}</p>
+                    <p className="text-sm text-clinical-700">{field.reason}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
 
           <section className="bg-white rounded-lg shadow p-6">

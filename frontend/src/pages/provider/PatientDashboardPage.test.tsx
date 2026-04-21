@@ -54,7 +54,8 @@ describe('ProviderPatientDashboardPage', () => {
               family_history: 'Psoriasis'
             },
             source_systems: [
-              { system_id: 'sys-epic', system_name: 'Epic' }
+              { system_id: 'sys-epic', system_name: 'Epic' },
+              { system_id: 'sys-nextgen', system_name: 'NextGen' }
             ],
             providers: [
               {
@@ -62,6 +63,12 @@ describe('ProviderPatientDashboardPage', () => {
                 provider_name: 'Dr. Ada Provider',
                 specialty: 'Primary Care',
                 clinic_affiliation: 'North Clinic'
+              },
+              {
+                provider_id: 'prov-derm',
+                provider_name: 'Dr. Bea Dermatology',
+                specialty: 'Dermatology',
+                clinic_affiliation: 'Skin Center'
               }
             ],
             medical_history: [
@@ -74,7 +81,12 @@ describe('ProviderPatientDashboardPage', () => {
                 system_name: 'Epic'
               }
             ],
-            missing_data: []
+            missing_data: [
+              {
+                field_name: 'Vaccination Record',
+                reason: 'NextGen source has not yet returned immunization history.'
+              }
+            ]
           },
           loading: false,
           error: null,
@@ -107,6 +119,12 @@ describe('ProviderPatientDashboardPage', () => {
     render(<ProviderPatientDashboardPage />);
 
     expect(screen.getByText('Patient Dashboard (Provider View)')).toBeInTheDocument();
+    expect(screen.getByText('Morning integration slice')).toBeInTheDocument();
+    expect(screen.getByText('Source ID: sys-epic')).toBeInTheDocument();
+    expect(screen.getByText('Source ID: sys-nextgen')).toBeInTheDocument();
+    expect(screen.getByText('Dr. Ada Provider')).toBeInTheDocument();
+    expect(screen.getByText('Dr. Bea Dermatology')).toBeInTheDocument();
+    expect(screen.getByText(/NextGen source has not yet returned immunization history\./i)).toBeInTheDocument();
     expect(screen.getByText('Patient Health Profile')).toBeInTheDocument();
     expect(screen.getByText('Topical corticosteroid')).toBeInTheDocument();
     expect(screen.getByText(/Epic\s*-\s*Medications/)).toBeInTheDocument();
