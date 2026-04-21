@@ -46,7 +46,15 @@ sentry_sdk.init(
     traces_sample_rate=0.0,
     enable_logs=False,
 )
+if os.getenv("SENTRY_TEST_BREAK", "false").lower() in {"1", "true", "yes"}:
+    try:
+        _ = 1 / 0
+    except ZeroDivisionError as exc:
+        sentry_sdk.capture_exception(exc)
+        sentry_sdk.flush(timeout=2.0)
+        raise
 settings = load_settings()
+
 
 # Initialize logging
 setup_logging(
