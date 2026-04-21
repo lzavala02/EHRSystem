@@ -3,10 +3,8 @@ FROM node:20-alpine AS frontend-builder
 
 WORKDIR /frontend
 
+# Copy all frontend files first
 COPY frontend/package.json frontend/package-lock.json ./
-
-RUN npm install --omit=dev
-
 COPY frontend/src ./src
 COPY frontend/public ./public
 COPY frontend/index.html ./
@@ -16,6 +14,10 @@ COPY frontend/vite.config.ts ./
 COPY frontend/tailwind.config.js ./
 COPY frontend/postcss.config.js ./
 
+# Install dependencies (including dev deps needed for build)
+RUN npm ci
+
+# Build the frontend
 RUN npm run build
 
 
