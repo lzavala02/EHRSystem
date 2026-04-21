@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal, TypedDict
 from uuid import uuid4
 
+import sentry_sdk
+from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -22,6 +26,7 @@ from .contracts import ensure_list_item_required_keys, ensure_required_keys
 from .dashboard import UnifiedChronicDiseaseDashboardService
 from .events import InMemoryAuditEventStore, InMemoryNotificationDispatcher
 from .fixtures import PSORIASIS_TRIGGER_CHECKLIST
+from .logging_config import setup_logging
 from .models import (
     AccessRequest,
     MedicalRecordItem,
@@ -33,7 +38,28 @@ from .models import (
 from .symptoms import SymptomLoggingService
 from .sync import CrossSystemSyncService, EpicAdapter, NextGenAdapter
 
+# Entry-point bootstrap: load .env before reading runtime settings.
+load_dotenv()
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN"),
+    send_default_pii=False,
+    traces_sample_rate=0.0,
+    enable_logs=False,
+)
 settings = load_settings()
+
+# Initialize logging
+setup_logging(
+    log_dir=settings.log_dir,
+    log_file=settings.log_file,
+    log_level=settings.log_level,
+    max_bytes=settings.log_max_bytes,
+    backup_count=settings.log_backup_count,
+)
+
+logger = logging.getLogger(__name__)
+logger.info(f"Starting {settings.app_name} in {settings.app_env} environment")
+
 app = FastAPI(title=settings.app_name)
 app.add_middleware(
     CORSMiddleware,
@@ -585,6 +611,7 @@ router = APIRouter(tags=["day3-security-scaffold"])
 def register_account(payload: RegisterRequest) -> dict[str, str]:
     existing = USERS_BY_EMAIL.get(payload.email.casefold())
     if existing is not None:
+        logger.warning(f"Registration failed: email already exists - {payload.email}")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already exists"
         )
@@ -603,6 +630,12 @@ def register_account(payload: RegisterRequest) -> dict[str, str]:
     )
     USERS_BY_ID[user_id] = user
     USERS_BY_EMAIL[user.email.casefold()] = user
+
+    logger.info(
+        f"User registered successfully: user_id={user_id}, "
+        f"email={payload.email}, role={payload.role}"
+    )
+
     return {
         "user_id": user.user_id,
         "email": user.email,
@@ -616,6 +649,7 @@ def register_account(payload: RegisterRequest) -> dict[str, str]:
 def login(payload: LoginRequest) -> dict[str, object]:
     user = USERS_BY_EMAIL.get(payload.email.casefold())
     if user is None or user.password != payload.password:
+        logger.warning(f"Login failed: invalid credentials for email {payload.email}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
@@ -629,6 +663,11 @@ def login(payload: LoginRequest) -> dict[str, object]:
         expires_at=challenge_expires_at,
     )
 
+    logger.info(
+        f"Login successful, 2FA challenge created: "
+        f"user_id={user.user_id}, challenge_id={challenge_id}"
+    )
+
     return {
         "challenge_id": challenge_id,
         "expires_at": challenge_expires_at.isoformat(),
@@ -640,12 +679,16 @@ def login(payload: LoginRequest) -> dict[str, object]:
 def verify_two_factor(payload: TwoFAVerifyRequest) -> dict[str, str]:
     challenge = CHALLENGES_BY_ID.get(payload.challenge_id)
     if challenge is None or challenge.expires_at <= _utc_now():
+        logger.warning("2FA verification failed: invalid/expired challenge")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Challenge expired or invalid",
         )
 
     if payload.code != "123456":
+        logger.warning(
+            f"2FA verification failed: invalid code for user_id={challenge.user_id}"
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid 2FA code",
@@ -661,6 +704,12 @@ def verify_two_factor(payload: TwoFAVerifyRequest) -> dict[str, str]:
     CHALLENGES_BY_ID.pop(payload.challenge_id, None)
 
     user = USERS_BY_ID[challenge.user_id]
+
+    logger.info(
+        f"User authenticated successfully: user_id={user.user_id}, "
+        f"role={user.role}, session_expires_at={expires_at.isoformat()}"
+    )
+
     return _to_session_user_payload(user, expires_at, session_token)
 
 
