@@ -580,16 +580,13 @@ def require_roles(
     return _role_dependency
 
 
-@app.get("/")
-def root() -> dict[str, str]:
-    """Default API landing route for platform checks and quick discovery."""
-
-    return {
-        "service": "api",
-        "status": "ok",
-        "health": "/health",
-        "docs": "/docs",
-    }
+@app.get("/", response_class=FileResponse, response_model=None)
+def root():
+    """Serve frontend SPA at root."""
+    index_path = os.path.join(frontend_dist_path, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"error": "Frontend build not found. Run: npm run build in frontend/"}
 
 
 @app.get("/health/live")
