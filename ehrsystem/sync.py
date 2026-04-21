@@ -364,7 +364,7 @@ class CrossSystemSyncService:
     def sync_patient_bidirectional(
         self,
         patient_id: str,
-        alert_service: "ProviderAlertService" | None = None,
+        alert_service: ProviderAlertService | None = None,
     ) -> tuple[list[MedicalRecordItem], list[SyncConflict], list[Alert]]:
         """Execute pull-then-push sync and raise provider alerts for conflicts."""
 

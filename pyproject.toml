@@ -17,6 +17,7 @@ ruff = "^0.15.10"
 mypy = "^1.20.1"
 pytest-cov = "^7.1.0"
 pre-commit = "^4.5.1"
+python-dotenv = "^1.2.2"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -47,7 +48,7 @@ exclude = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["app", "core", "utils", "services"]  # your own modules
+known-first-party = ["ehrsystem", "app", "core", "utils", "services"]  # your own modules
 
 [tool.ruff.format]
 quote-style = "double"        # consistent with black
@@ -57,5 +58,6 @@ skip-magic-trailing-comma = false
 [dependency-groups]
 dev = [
     "ruff (>=0.15.10,<0.16.0)",
-    "pytest (>=9.0.3,<10.0.0)"
+    "pytest (>=9.0.3,<10.0.0)",
+    "pytest-playwright (>=0.7.2,<0.8.0)"
 ]

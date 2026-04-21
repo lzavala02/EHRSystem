@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from redis import Redis
-from rq import Connection, Queue, Worker
+from rq import Queue, Worker
 
 from .config import load_settings
 
@@ -13,11 +13,10 @@ def run_worker() -> None:
 
     settings = load_settings()
     redis_conn = Redis.from_url(settings.redis_url)
-    queue = Queue(settings.worker_queue_name)
+    queue = Queue(settings.worker_queue_name, connection=redis_conn)
 
-    with Connection(redis_conn):
-        worker = Worker([queue])
-        worker.work(with_scheduler=False)
+    worker = Worker([queue], connection=redis_conn)
+    worker.work(with_scheduler=False)
 
 
 if __name__ == "__main__":

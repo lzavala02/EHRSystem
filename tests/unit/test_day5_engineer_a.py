@@ -41,7 +41,9 @@ def test_sync_status_endpoint_returns_per_category_utc_timestamps() -> None:
     assert payload["patient_id"] == "pat-1"
     categories = {entry["category"] for entry in payload["sync_status"]}
     assert {"Medications", "Labs"}.issubset(categories)
-    assert all(entry["last_synced_at"].endswith("+00:00") for entry in payload["sync_status"])
+    assert all(
+        entry["last_synced_at"].endswith("+00:00") for entry in payload["sync_status"]
+    )
 
 
 def test_alerts_endpoint_includes_conflict_alerts_from_sync_pipeline() -> None:
@@ -56,7 +58,9 @@ def test_alerts_endpoint_includes_conflict_alerts_from_sync_pipeline() -> None:
     assert response.status_code == 200
     alerts = response.json()["alerts"]
     conflict_alerts = [
-        alert for alert in alerts if alert["alert_type"] in {"Data Conflict", "SyncConflict"}
+        alert
+        for alert in alerts
+        if alert["alert_type"] in {"Data Conflict", "SyncConflict"}
     ]
     assert conflict_alerts
     assert any(alert.get("system_id") == "sys-epic" for alert in conflict_alerts)

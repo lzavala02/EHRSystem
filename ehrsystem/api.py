@@ -256,8 +256,7 @@ SYSTEM_NAME_BY_ID = {
     "sys-epic": "Epic",
     "sys-nextgen": "NextGen",
 }
-SYNC_STATUS_BY_PATIENT: dict[str, list[SyncStatusEntry]] = {
-}
+SYNC_STATUS_BY_PATIENT: dict[str, list[SyncStatusEntry]] = {}
 
 LOCAL_SYNC_RECORDS: list[MedicalRecordItem] = [
     MedicalRecordItem(
@@ -291,7 +290,9 @@ SYNC_SERVICE = CrossSystemSyncService(
             records=[item for item in MEDICAL_RECORDS if item.system_id == "sys-epic"]
         ),
         NextGenAdapter(
-            records=[item for item in MEDICAL_RECORDS if item.system_id == "sys-nextgen"]
+            records=[
+                item for item in MEDICAL_RECORDS if item.system_id == "sys-nextgen"
+            ]
         ),
     ],
     local_records=LOCAL_SYNC_RECORDS,
@@ -301,9 +302,7 @@ SYNC_SERVICE = CrossSystemSyncService(
 def _rebuild_sync_status_cache(patient_id: str) -> None:
     status_rows = SYNC_SERVICE.get_last_synced_status(patient_id)
     metadata_rows = SYNC_SERVICE.get_sync_metadata_records(patient_id)
-    system_id_by_category = {
-        row.category: row.system_id for row in metadata_rows
-    }
+    system_id_by_category = {row.category: row.system_id for row in metadata_rows}
 
     SYNC_STATUS_BY_PATIENT[patient_id] = [
         {
@@ -318,7 +317,7 @@ def _rebuild_sync_status_cache(patient_id: str) -> None:
     ]
 
 
-def _build_alert_payload(alert: dict[str, object]) -> dict[str, object]:
+def _build_alert_payload(alert: dict[str, object]) -> dict[str, str]:
     return {
         "alert_id": str(alert["alert_id"]),
         "alert_type": str(alert["alert_type"]),
@@ -329,6 +328,7 @@ def _build_alert_payload(alert: dict[str, object]) -> dict[str, object]:
         "triggered_at": str(alert["created_at"]),
         "system_id": str(alert.get("system_id") or "sys-unknown"),
     }
+
 
 DASHBOARD_SERVICE = UnifiedChronicDiseaseDashboardService(
     patients=PATIENTS,
@@ -457,7 +457,9 @@ for patient in PATIENTS:
                 "provider_id": alert.provider_id,
                 "description": alert.description,
                 "status": alert.status,
-                "created_at": alert.created_at.isoformat() if alert.created_at else _utc_now().isoformat(),
+                "created_at": alert.created_at.isoformat()
+                if alert.created_at
+                else _utc_now().isoformat(),
                 "system_id": alert.system_id,
             }
         )

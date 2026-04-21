@@ -61,7 +61,9 @@ class InMemoryAuditEventStore:
     def list_events(self, *, event_type: str | None = None) -> list[AuditEvent]:
         selected = self._events
         if event_type is not None:
-            selected = [event for event in self._events if event.event_type == event_type]
+            selected = [
+                event for event in self._events if event.event_type == event_type
+            ]
         return [deepcopy(event) for event in selected]
 
 

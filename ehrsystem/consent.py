@@ -36,7 +36,9 @@ class ConsentWorkflowService:
         self._two_factor_enabled_by_user = dict(two_factor_enabled_by_user or {})
         self._audit_recorder = audit_recorder
         self._notification_sender = notification_sender
-        self._document_generator = document_generator or self._default_document_generator
+        self._document_generator = (
+            document_generator or self._default_document_generator
+        )
 
     def _record_audit(
         self,
