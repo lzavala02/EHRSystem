@@ -266,3 +266,5 @@ Day 2 joint migration and seed sign-off run order and verification queries are a
 Detailed Day 2 Engineer A Checkpoint Output is available in [docs/day2_engineer_a_checkpoint.md](docs/day2_engineer_a_checkpoint.md).
 
 Detailed Day 2 Engineer B Checkpoint Output is available in [docs/day2_engineer_b_checkpoint.md](docs/day2_engineer_b_checkpoint.md).
+
+Docker deploy, uptime monitoring, and CD setup instructions are available in [docs/deployment_render_uptimerobot.md](docs/deployment_render_uptimerobot.md).

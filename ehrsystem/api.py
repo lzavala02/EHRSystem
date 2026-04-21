@@ -580,6 +580,13 @@ def liveness() -> dict[str, str]:
     return {"status": "ok", "service": "api", "environment": settings.app_env}
 
 
+@app.get("/health")
+def health() -> dict[str, str]:
+    """Simple uptime endpoint suitable for external uptime monitors."""
+
+    return {"status": "ok", "service": "api", "environment": settings.app_env}
+
+
 @app.get("/health/ready")
 def readiness() -> dict[str, str]:
     """Dependency-aware readiness probe for DB and queue broker."""
