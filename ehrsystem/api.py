@@ -31,6 +31,7 @@ from .models import (
     Trigger,
 )
 from .symptoms import SymptomLoggingService
+from .sync import CrossSystemSyncService, EpicAdapter, NextGenAdapter
 
 settings = load_settings()
 app = FastAPI(title=settings.app_name)
@@ -256,29 +257,78 @@ SYSTEM_NAME_BY_ID = {
     "sys-nextgen": "NextGen",
 }
 SYNC_STATUS_BY_PATIENT: dict[str, list[SyncStatusEntry]] = {
-    "pat-1": [
-        {
-            "category": "Medications",
-            "last_synced_at": datetime(2026, 4, 12, 8, 0, tzinfo=UTC),
-            "system_id": "sys-epic",
-            "system_name": "Epic",
-        },
-        {
-            "category": "Labs",
-            "last_synced_at": datetime(2026, 4, 12, 8, 15, tzinfo=UTC),
-            "system_id": "sys-nextgen",
-            "system_name": "NextGen",
-        },
-    ],
-    "pat-2": [
-        {
-            "category": "Diagnoses",
-            "last_synced_at": datetime(2026, 4, 10, 7, 45, tzinfo=UTC),
-            "system_id": "sys-epic",
-            "system_name": "Epic",
-        }
-    ],
 }
+
+LOCAL_SYNC_RECORDS: list[MedicalRecordItem] = [
+    MedicalRecordItem(
+        record_id="local-sync-1",
+        patient_id="pat-1",
+        system_id=None,
+        category="Medications",
+        value_description="Hydrocortisone cream",
+        recorded_at=datetime(2026, 4, 12, 7, 40, tzinfo=UTC),
+    ),
+    MedicalRecordItem(
+        record_id="local-sync-2",
+        patient_id="pat-1",
+        system_id=None,
+        category="Labs",
+        value_description="Inflammation markers within expected range",
+        recorded_at=datetime(2026, 4, 12, 7, 35, tzinfo=UTC),
+    ),
+    MedicalRecordItem(
+        record_id="local-sync-3",
+        patient_id="pat-2",
+        system_id=None,
+        category="Diagnoses",
+        value_description="Psoriasis flare documented",
+        recorded_at=datetime(2026, 4, 9, 8, 45, tzinfo=UTC),
+    ),
+]
+SYNC_SERVICE = CrossSystemSyncService(
+    adapters=[
+        EpicAdapter(
+            records=[item for item in MEDICAL_RECORDS if item.system_id == "sys-epic"]
+        ),
+        NextGenAdapter(
+            records=[item for item in MEDICAL_RECORDS if item.system_id == "sys-nextgen"]
+        ),
+    ],
+    local_records=LOCAL_SYNC_RECORDS,
+)
+
+
+def _rebuild_sync_status_cache(patient_id: str) -> None:
+    status_rows = SYNC_SERVICE.get_last_synced_status(patient_id)
+    metadata_rows = SYNC_SERVICE.get_sync_metadata_records(patient_id)
+    system_id_by_category = {
+        row.category: row.system_id for row in metadata_rows
+    }
+
+    SYNC_STATUS_BY_PATIENT[patient_id] = [
+        {
+            "category": status_row.category,
+            "last_synced_at": status_row.last_synced_at or _utc_now(),
+            "system_id": system_id_by_category.get(
+                status_row.category, "sys-clinic-repository"
+            ),
+            "system_name": status_row.system_name,
+        }
+        for status_row in status_rows
+    ]
+
+
+def _build_alert_payload(alert: dict[str, object]) -> dict[str, object]:
+    return {
+        "alert_id": str(alert["alert_id"]),
+        "alert_type": str(alert["alert_type"]),
+        "patient_id": str(alert.get("patient_id") or ""),
+        "provider_id": str(alert.get("provider_id") or "prov-pcp"),
+        "description": str(alert["description"]),
+        "status": str(alert.get("status") or "Active"),
+        "triggered_at": str(alert["created_at"]),
+        "system_id": str(alert.get("system_id") or "sys-unknown"),
+    }
 
 DASHBOARD_SERVICE = UnifiedChronicDiseaseDashboardService(
     patients=PATIENTS,
@@ -391,6 +441,28 @@ ALERT_PAYLOADS = [
         "triggered_at": datetime(2026, 4, 12, 9, 30, tzinfo=UTC).isoformat(),
     },
 ]
+
+for patient in PATIENTS:
+    _pulled, _conflicts, generated_alerts = SYNC_SERVICE.sync_patient_bidirectional(
+        patient.patient_id,
+        alert_service=ALERT_SERVICE,
+    )
+    _rebuild_sync_status_cache(patient.patient_id)
+    ALERT_PAYLOADS.extend(
+        _build_alert_payload(
+            {
+                "alert_id": alert.alert_id,
+                "alert_type": alert.alert_type,
+                "patient_id": alert.patient_id,
+                "provider_id": alert.provider_id,
+                "description": alert.description,
+                "status": alert.status,
+                "created_at": alert.created_at.isoformat() if alert.created_at else _utc_now().isoformat(),
+                "system_id": alert.system_id,
+            }
+        )
+        for alert in generated_alerts
+    )
 
 REPORT_JOBS: dict[str, dict[str, object]] = {}
 REPORT_METADATA: dict[str, dict[str, str]] = {

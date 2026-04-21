@@ -6,6 +6,7 @@ import axios, {
   InternalAxiosRequestConfig,
   AxiosResponse
 } from 'axios';
+import { normalizeApiBaseUrl, parseTimeout } from './config';
 
 declare global {
   interface Window {
@@ -19,8 +20,12 @@ let apiClientInstance: AxiosInstance | null = null;
  * Initialize API client with auth token provider
  */
 export function initializeApiClient(getAuthToken: () => string | null): AxiosInstance {
-  const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-  const timeout = parseInt(import.meta.env.VITE_API_TIMEOUT || '30000', 10);
+  const fallbackOrigin =
+    typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'http://localhost:8000';
+  const baseURL = normalizeApiBaseUrl(import.meta.env.VITE_API_URL, fallbackOrigin);
+  const timeout = parseTimeout(import.meta.env.VITE_API_TIMEOUT);
 
   const client = axios.create({
     baseURL,

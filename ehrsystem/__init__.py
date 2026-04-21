@@ -75,8 +75,14 @@ from .sync import (
     EHRProtocolAdapter as EHRProtocolAdapter,
 )
 from .sync import (
+    EpicAdapter as EpicAdapter,
+)
+from .sync import (
     FHIRAdapter as FHIRAdapter,
 )
 from .sync import (
     HL7Adapter as HL7Adapter,
+)
+from .sync import (
+    NextGenAdapter as NextGenAdapter,
 )
