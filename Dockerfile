@@ -13,11 +13,12 @@ COPY frontend/tsconfig.node.json ./
 COPY frontend/vite.config.ts ./
 COPY frontend/tailwind.config.js ./
 COPY frontend/postcss.config.js ./
+COPY frontend/.env.production .env.production
 
 # Install dependencies (including dev deps needed for build)
 RUN npm ci
 
-# Build the frontend
+# Build the frontend (uses .env.production for environment variables)
 RUN npm run build
 
 
