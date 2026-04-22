@@ -7,6 +7,7 @@ import axios, {
   AxiosResponse
 } from 'axios';
 import { normalizeApiBaseUrl, parseTimeout } from './config';
+import { parseApiErrorMessage } from './errorParsing';
 
 declare global {
   interface Window {
@@ -90,7 +91,7 @@ export function initializeApiClient(getAuthToken: () => string | null): AxiosIns
       }
 
       // Handle other errors
-      const errorMessage = (error.response?.data as any)?.message || error.message;
+      const errorMessage = parseApiErrorMessage(error.response?.data, error.message);
       return Promise.reject(new Error(errorMessage));
     }
   );

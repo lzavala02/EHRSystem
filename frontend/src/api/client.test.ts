@@ -1,4 +1,5 @@
 import { normalizeApiBaseUrl, parseTimeout } from './config';
+import { parseApiErrorMessage } from './errorParsing';
 
 describe('api runtime config helpers', () => {
   test('parseTimeout uses safe defaults and boundaries', () => {
@@ -25,5 +26,38 @@ describe('api runtime config helpers', () => {
     expect(normalizeApiBaseUrl(undefined, window.location.origin)).toBe(
       `${window.location.origin}/api`
     );
+  });
+});
+
+describe('parseApiErrorMessage', () => {
+  test('returns detail when backend sends a plain detail string', () => {
+    expect(parseApiErrorMessage({ detail: 'At least one trigger is required' }, 'fallback')).toBe(
+      'At least one trigger is required'
+    );
+  });
+
+  test('returns formatted first validation error from detail array', () => {
+    expect(
+      parseApiErrorMessage(
+        {
+          detail: [
+            {
+              loc: ['body', 'severity_scale'],
+              msg: 'Input should be less than or equal to 10',
+              type: 'less_than_equal'
+            }
+          ]
+        },
+        'fallback'
+      )
+    ).toBe('body.severity_scale: Input should be less than or equal to 10');
+  });
+
+  test('falls back to message if detail is missing', () => {
+    expect(parseApiErrorMessage({ message: 'Request failed' }, 'fallback')).toBe('Request failed');
+  });
+
+  test('returns fallback when payload has no recognized fields', () => {
+    expect(parseApiErrorMessage({ foo: 'bar' }, 'fallback')).toBe('fallback');
   });
 });

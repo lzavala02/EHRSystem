@@ -74,3 +74,56 @@ export function validateSeverity(severity: number): string | null {
   }
   return null;
 }
+
+export function validateSymptomDescription(description: string): string | null {
+  if (!description) return 'Description is required';
+  if (description.length < 10) return 'Description must be at least 10 characters';
+  if (description.length > 500) return 'Description must not exceed 500 characters';
+  return null;
+}
+
+export function validatePsoriasisLanguage(description: string): string | null {
+  const psoriasisTerms = [
+    "psoriasis",
+    "plaque",
+    "itching",
+    "scaling",
+    "redness"
+  ];
+  const normalized = description.toLowerCase().trim();
+  if (!psoriasisTerms.some(term => normalized.includes(term))) {
+    return 'Description must reference psoriasis-oriented symptoms';
+  }
+  return null;
+}
+
+export function validateSelectedTrigger(trigger: string): string | null {
+  const validTriggers = [
+    "stress",
+    "lack of sleep",
+    "scented products",
+    "dry weather",
+    "skin injury",
+    "infection",
+    "smoking",
+    "alcohol"
+  ];
+  if (!validTriggers.includes(trigger.toLowerCase().trim())) {
+    return 'Invalid trigger selected';
+  }
+  return null;
+}
+
+export function validateOTCTreatment(treatment: string, severity: number): string | null {
+  const normalizedTreatment = treatment.toLowerCase().trim();
+
+  if (severity >= 8 && !normalizedTreatment) {
+    return 'At least one OTC treatment is required when severity is 8 or higher';
+  }
+
+  if (!normalizedTreatment) {
+    return null;
+  }
+
+  return null;
+}

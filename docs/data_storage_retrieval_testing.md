@@ -158,6 +158,35 @@ Copy this section and fill it in for each new implementation day.
 - Follow-up actions:
 ```
 
+## Day 7 Validation (2026-04-22)
+
+### Scope Added
+- Feature(s): Psoriasis-specific symptom logging validation, OTC conditional requirement, trigger checklist enforcement, and symptom retrieval view filtering/summaries.
+- Tables/columns/constraints added: No new Day 7 SQL migration recorded in this update; Day 2 schema/seed baseline remains the active foundation for symptom-related fixtures.
+- API/service retrieval paths added: `GET /v1/symptoms/triggers` and `GET /v1/symptoms/logs`; write path validated through `POST /v1/symptoms/logs` contract and frontend submission flow.
+
+### Storage Tests Run
+- Migration(s): Not re-run in this Day 7 checkpoint entry (no new migration artifact recorded for this update).
+- Seed/fixture scripts: Existing psoriasis trigger seed baseline reused (`PSORIASIS_TRIGGER_CHECKLIST`, expected 8 triggers).
+- Write-path checks: Symptom form submission path validated via frontend tests that assert payload persistence contract shape and reset/success behavior.
+
+### Retrieval Tests Run
+- SQL query checks: Not re-run in this checkpoint entry.
+- API checks (if available): Frontend retrieval path validated against symptom endpoints and response normalization for logs/triggers.
+- Service-layer/unit tests: Python unit suite available and currently passing in workspace context (`tests/unit`: 40 passed).
+
+### Frontend Tests Run
+- Screens/components validated: `SymptomLogPage` and `SymptomHistoryPage`.
+- Data retrieval journeys validated: Symptom history retrieval with severity-band filtering, trigger filtering, sort behavior, summary cards, and clear-filters flow.
+- Data write/update journeys validated: Symptom log submission success plus psoriasis-specific validation blocks (non-psoriasis description, missing trigger, severity >= 8 without OTC).
+- Role-based access checks: Patient-linked symptom flows validated in page tests/mocks; no new role regression noted in this Day 7 checkpoint.
+- Regression/smoke summary: Targeted frontend symptom suites passing (`SymptomLogPage.test.tsx`, `SymptomHistoryPage.test.tsx`).
+
+### Results
+- Pass/Fail summary: Pass for Day 7 symptom logging and retrieval UI/test scope.
+- Any mismatches or defects: None open in current Day 7 symptom test scope.
+- Follow-up actions: Add explicit Day 7 DB-level persistence/retrieval SQL verification commands to this document if a migration or schema delta is introduced.
+
 ## Suggested Retrieval Test Expansion by Milestone
 
 As implementation progresses, extend this file with specific checks:

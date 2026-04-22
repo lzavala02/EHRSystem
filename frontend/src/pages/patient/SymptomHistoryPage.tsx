@@ -12,12 +12,23 @@ function normalizeLogs(payload: SymptomLog[] | SymptomLogListResponse | null): S
   return payload.logs ?? [];
 }
 
+function getSeverityBand(severity: number): 'mild' | 'moderate' | 'severe' {
+  if (severity <= 3) return 'mild';
+  if (severity <= 7) return 'moderate';
+  return 'severe';
+}
+
 export function SymptomHistoryPage() {
   const { user } = useAuth();
   const patientId = user?.patient_id;
 
   const [searchText, setSearchText] = useState('');
   const [minimumSeverity, setMinimumSeverity] = useState<number>(1);
+  const [selectedTrigger, setSelectedTrigger] = useState('all');
+  const [severityBand, setSeverityBand] = useState<'all' | 'mild' | 'moderate' | 'severe'>('all');
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'highest' | 'lowest'>('newest');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   const {
     data,
@@ -31,10 +42,37 @@ export function SymptomHistoryPage() {
 
   const logs = useMemo(() => normalizeLogs(data ?? null), [data]);
 
+  const availableTriggers = useMemo(() => {
+    const triggerSet = new Set<string>();
+    for (const log of logs) {
+      for (const trigger of log.triggers) {
+        triggerSet.add(trigger.trigger_name);
+      }
+    }
+    return [...triggerSet].sort((a, b) => a.localeCompare(b));
+  }, [logs]);
+
   const filteredLogs = useMemo(() => {
     const normalizedSearch = searchText.trim().toLowerCase();
+    const fromDate = dateFrom ? new Date(`${dateFrom}T00:00:00.000Z`) : null;
+    const toDate = dateTo ? new Date(`${dateTo}T23:59:59.999Z`) : null;
+
     return [...logs]
       .filter((log) => log.severity_scale >= minimumSeverity)
+      .filter((log) => {
+        if (severityBand === 'all') return true;
+        return getSeverityBand(log.severity_scale) === severityBand;
+      })
+      .filter((log) => {
+        if (selectedTrigger === 'all') return true;
+        return log.triggers.some((trigger) => trigger.trigger_name === selectedTrigger);
+      })
+      .filter((log) => {
+        const createdAt = new Date(log.created_at);
+        if (fromDate && createdAt < fromDate) return false;
+        if (toDate && createdAt > toDate) return false;
+        return true;
+      })
       .filter((log) => {
         if (!normalizedSearch) return true;
         return (
@@ -43,8 +81,44 @@ export function SymptomHistoryPage() {
           log.otc_treatments.some((treatment) => treatment.toLowerCase().includes(normalizedSearch))
         );
       })
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [logs, minimumSeverity, searchText]);
+      .sort((a, b) => {
+        if (sortBy === 'oldest') {
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        }
+        if (sortBy === 'highest') {
+          return b.severity_scale - a.severity_scale;
+        }
+        if (sortBy === 'lowest') {
+          return a.severity_scale - b.severity_scale;
+        }
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+  }, [logs, minimumSeverity, searchText, selectedTrigger, severityBand, sortBy, dateFrom, dateTo]);
+
+  const summary = useMemo(() => {
+    const total = filteredLogs.length;
+    const severeCount = filteredLogs.filter((log) => log.severity_scale >= 8).length;
+    const averageSeverity =
+      total === 0
+        ? null
+        : filteredLogs.reduce((sum, log) => sum + log.severity_scale, 0) / total;
+
+    return {
+      total,
+      severeCount,
+      averageSeverity: averageSeverity !== null ? averageSeverity.toFixed(1) : 'N/A'
+    };
+  }, [filteredLogs]);
+
+  const clearFilters = () => {
+    setSearchText('');
+    setMinimumSeverity(1);
+    setSelectedTrigger('all');
+    setSeverityBand('all');
+    setSortBy('newest');
+    setDateFrom('');
+    setDateTo('');
+  };
 
   if (!patientId) {
     return <ErrorAlert message="No patient profile is linked to your account." />;
@@ -72,6 +146,21 @@ export function SymptomHistoryPage() {
       {error && <ErrorAlert message={error.message} />}
 
       <div className="bg-white rounded-lg shadow p-6 space-y-4">
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-lg border border-clinical-200 bg-clinical-50 p-3">
+            <p className="text-xs text-clinical-600">Logs Shown</p>
+            <p className="text-2xl font-semibold text-clinical-900">{summary.total}</p>
+          </div>
+          <div className="rounded-lg border border-clinical-200 bg-clinical-50 p-3">
+            <p className="text-xs text-clinical-600">Average Severity</p>
+            <p className="text-2xl font-semibold text-clinical-900">{summary.averageSeverity}</p>
+          </div>
+          <div className="rounded-lg border border-clinical-200 bg-clinical-50 p-3">
+            <p className="text-xs text-clinical-600">Severe Logs (8-10)</p>
+            <p className="text-2xl font-semibold text-clinical-900">{summary.severeCount}</p>
+          </div>
+        </div>
+
         <div className="grid gap-4 md:grid-cols-3">
           <div className="md:col-span-2">
             <label htmlFor="history-search" className="block text-sm font-medium text-clinical-700 mb-1">
@@ -86,6 +175,7 @@ export function SymptomHistoryPage() {
               className="w-full border border-clinical-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-clinical-500"
             />
           </div>
+
           <div>
             <label htmlFor="min-severity" className="block text-sm font-medium text-clinical-700 mb-1">
               Minimum Severity
@@ -103,6 +193,97 @@ export function SymptomHistoryPage() {
               ))}
             </select>
           </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-4">
+          <div>
+            <label htmlFor="severity-band" className="block text-sm font-medium text-clinical-700 mb-1">
+              Severity Band
+            </label>
+            <select
+              id="severity-band"
+              value={severityBand}
+              onChange={(e) => setSeverityBand(e.target.value as 'all' | 'mild' | 'moderate' | 'severe')}
+              className="w-full border border-clinical-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-clinical-500"
+            >
+              <option value="all">All</option>
+              <option value="mild">Mild (1-3)</option>
+              <option value="moderate">Moderate (4-7)</option>
+              <option value="severe">Severe (8-10)</option>
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="trigger-filter" className="block text-sm font-medium text-clinical-700 mb-1">
+              Trigger
+            </label>
+            <select
+              id="trigger-filter"
+              value={selectedTrigger}
+              onChange={(e) => setSelectedTrigger(e.target.value)}
+              className="w-full border border-clinical-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-clinical-500"
+            >
+              <option value="all">All Triggers</option>
+              {availableTriggers.map((triggerName) => (
+                <option key={triggerName} value={triggerName}>
+                  {triggerName}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="date-from" className="block text-sm font-medium text-clinical-700 mb-1">
+              Date From
+            </label>
+            <input
+              id="date-from"
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="w-full border border-clinical-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-clinical-500"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="date-to" className="block text-sm font-medium text-clinical-700 mb-1">
+              Date To
+            </label>
+            <input
+              id="date-to"
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="w-full border border-clinical-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-clinical-500"
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <label htmlFor="sort-by" className="block text-sm font-medium text-clinical-700 mb-1">
+              Sort
+            </label>
+            <select
+              id="sort-by"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as 'newest' | 'oldest' | 'highest' | 'lowest')}
+              className="w-full min-w-52 border border-clinical-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-clinical-500"
+            >
+              <option value="newest">Date: Newest First</option>
+              <option value="oldest">Date: Oldest First</option>
+              <option value="highest">Severity: Highest First</option>
+              <option value="lowest">Severity: Lowest First</option>
+            </select>
+          </div>
+
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="px-4 py-2 text-sm bg-clinical-100 text-clinical-700 rounded-lg hover:bg-clinical-200 transition"
+          >
+            Clear Filters
+          </button>
         </div>
 
         {filteredLogs.length === 0 ? (

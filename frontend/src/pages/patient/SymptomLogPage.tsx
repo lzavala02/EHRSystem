@@ -5,7 +5,13 @@ import { LoadingSpinner } from '../../components/LoadingSpinner';
 import { useAuth } from '../../context/AuthContext';
 import { useFetch } from '../../hooks/useFetch';
 import { TriggerChecklist } from '../../types/api';
-import { validateSeverity } from '../../utils/validation';
+import {
+  validateOTCTreatment,
+  validatePsoriasisLanguage,
+  validateSelectedTrigger,
+  validateSeverity,
+  validateSymptomDescription
+} from '../../utils/validation';
 
 interface TriggerEnvelope {
   triggers: TriggerChecklist[];
@@ -63,8 +69,16 @@ export function SymptomLogPage() {
       return;
     }
 
-    if (description.trim().length < 10) {
-      setFormError('Symptom description must be at least 10 characters.');
+    const normalizedDescription = description.trim();
+    const descriptionError = validateSymptomDescription(normalizedDescription);
+    if (descriptionError) {
+      setFormError(descriptionError);
+      return;
+    }
+
+    const psoriasisLanguageError = validatePsoriasisLanguage(normalizedDescription);
+    if (psoriasisLanguageError) {
+      setFormError(psoriasisLanguageError);
       return;
     }
 
@@ -79,17 +93,36 @@ export function SymptomLogPage() {
       return;
     }
 
+    const selectedTriggerNames = selectedTriggerIds
+      .map((triggerId) => triggerChecklist.find((trigger) => trigger.trigger_id === triggerId)?.trigger_name)
+      .filter((triggerName): triggerName is string => Boolean(triggerName));
+
+    for (const triggerName of selectedTriggerNames) {
+      const triggerValidationError = validateSelectedTrigger(triggerName);
+      if (triggerValidationError) {
+        setFormError(triggerValidationError);
+        return;
+      }
+    }
+
     const otcTreatments = otcTreatmentsInput
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean);
+
+    const otcValidationTarget = otcTreatments[0] ?? '';
+    const otcValidationError = validateOTCTreatment(otcValidationTarget, severity);
+    if (otcValidationError) {
+      setFormError(otcValidationError);
+      return;
+    }
 
     setSubmitting(true);
     try {
       const apiClient = getApiClient();
       await apiClient.post('/v1/symptoms/logs', {
         patient_id: patientId,
-        symptom_description: description.trim(),
+        symptom_description: normalizedDescription,
         severity_scale: severity,
         trigger_ids: selectedTriggerIds,
         otc_treatments: otcTreatments
@@ -126,6 +159,16 @@ export function SymptomLogPage() {
       {error && <ErrorAlert message={error.message} />}
       {formError && <ErrorAlert message={formError} />}
       {successMessage && <SuccessAlert message={successMessage} />}
+      {successMessage && (
+        <div>
+          <a
+            href="/patient/symptoms/history"
+            className="inline-flex items-center px-4 py-2 text-sm bg-clinical-100 text-clinical-800 rounded-lg hover:bg-clinical-200 transition"
+          >
+            View Symptom History
+          </a>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6 space-y-5">
         <div>
