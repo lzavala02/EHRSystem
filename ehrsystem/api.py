@@ -36,7 +36,7 @@ from .models import (
     Treatment,
     Trigger,
 )
-from .symptoms import SymptomLoggingService
+from .symptoms import PsoriasisPayload, SymptomLoggingService, SymptomValidationError
 from .sync import CrossSystemSyncService, EpicAdapter, NextGenAdapter
 
 # Entry-point bootstrap: load .env before reading runtime settings.
@@ -848,7 +848,7 @@ def create_consent_request(
     )
     if effective_provider_id is None:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="provider_id is required",
         )
 
@@ -1187,32 +1187,45 @@ def create_symptom_log(
     if user.role == "Patient" and user.patient_id != payload.patient_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-    if not payload.trigger_ids:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="At least one trigger is required",
-        )
-
     selected_triggers = []
     for trigger_id in payload.trigger_ids:
         trigger = TRIGGER_BY_ID.get(trigger_id)
         if trigger is None:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"Unknown trigger_id: {trigger_id}",
             )
         selected_triggers.append(trigger)
 
+    normalized_otc_treatments = [
+        treatment.strip() for treatment in payload.otc_treatments if treatment.strip()
+    ]
+
+    try:
+        SYMPTOM_SERVICE.validate_psoriasis_payload(
+            PsoriasisPayload(
+                symptom_description=payload.symptom_description,
+                severity_scale=payload.severity_scale,
+                trigger_names=[trigger.trigger_name for trigger in selected_triggers],
+                otc_treatments=normalized_otc_treatments,
+            )
+        )
+    except SymptomValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
     symptom_log = SYMPTOM_SERVICE.log_symptom(
         patient_id=payload.patient_id,
-        symptom_description=payload.symptom_description,
+        symptom_description=payload.symptom_description.strip(),
         severity_scale=payload.severity_scale,
     )
 
     SYMPTOM_SERVICE.attach_triggers(symptom_log.log_id, selected_triggers)
 
     treatment_objects: list[Treatment] = []
-    for index, treatment_name in enumerate(payload.otc_treatments, start=1):
+    for index, treatment_name in enumerate(normalized_otc_treatments, start=1):
         treatment_objects.append(
             Treatment(
                 treatment_id=f"{symptom_log.log_id}-otc-{index}",
@@ -1229,6 +1242,9 @@ def create_symptom_log(
             "patient_id": symptom_log.patient_id,
             "symptom_description": symptom_log.symptom_description,
             "severity_scale": symptom_log.severity_scale,
+            "severity_level": SYMPTOM_SERVICE.get_severity_level(
+                symptom_log.severity_scale
+            ),
             "triggers": [
                 {
                     "trigger_id": trigger.trigger_id,
@@ -1236,7 +1252,7 @@ def create_symptom_log(
                 }
                 for trigger in selected_triggers
             ],
-            "otc_treatments": payload.otc_treatments,
+            "otc_treatments": normalized_otc_treatments,
             "created_at": symptom_log.log_date.isoformat()
             if symptom_log.log_date
             else _utc_now().isoformat(),

@@ -2,9 +2,15 @@
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from ehrsystem.fixtures import is_valid_psoriasis_trigger
 from ehrsystem.models import Treatment, Trigger
-from ehrsystem.symptoms import SymptomLoggingService
+from ehrsystem.symptoms import (
+    PsoriasisPayload,
+    SymptomLoggingService,
+    SymptomValidationError,
+)
 
 
 def test_symptom_logging_service_creates_trend_report() -> None:
@@ -45,3 +51,47 @@ def test_psoriasis_trigger_validation_fixture_is_seed_aligned() -> None:
     assert is_valid_psoriasis_trigger("lack of sleep")
     assert is_valid_psoriasis_trigger("  Scented Products  ")
     assert not is_valid_psoriasis_trigger("Unknown Trigger")
+
+
+def test_validate_psoriasis_payload_rejects_non_psoriasis_description() -> None:
+    """Service should enforce psoriasis-oriented symptom descriptions."""
+
+    service = SymptomLoggingService()
+
+    with pytest.raises(SymptomValidationError) as exc_info:
+        service.validate_psoriasis_payload(
+            PsoriasisPayload(
+                symptom_description="Intermittent headache and fatigue",
+                severity_scale=4,
+                trigger_names=["Stress"],
+                otc_treatments=["Hydrocortisone cream"],
+            )
+        )
+    assert "psoriasis-oriented symptoms" in str(exc_info.value)
+
+
+def test_validate_psoriasis_payload_requires_otc_for_severe_entries() -> None:
+    """Service should require treatment entries for higher severity values."""
+
+    service = SymptomLoggingService()
+
+    with pytest.raises(SymptomValidationError) as exc_info:
+        service.validate_psoriasis_payload(
+            PsoriasisPayload(
+                symptom_description="Psoriasis plaque flare and itching on scalp",
+                severity_scale=8,
+                trigger_names=["Stress"],
+                otc_treatments=[],
+            )
+        )
+    assert "severity is 8 or higher" in str(exc_info.value)
+
+
+def test_get_severity_level_maps_scale_bands() -> None:
+    """Numeric severity should map into mild, moderate, and severe labels."""
+
+    service = SymptomLoggingService()
+
+    assert service.get_severity_level(2) == "mild"
+    assert service.get_severity_level(6) == "moderate"
+    assert service.get_severity_level(9) == "severe"
