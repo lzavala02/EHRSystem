@@ -36,7 +36,7 @@ class ProviderAlertService:
 
         return Alert(
             alert_id=str(uuid4()),
-            alert_type="Data Conflict",
+            alert_type="SyncConflict",
             description=description,
             patient_id=patient_id,
             system_id=system_id,
@@ -51,7 +51,7 @@ class ProviderAlertService:
 
         return Alert(
             alert_id=str(uuid4()),
-            alert_type="Negative Trend",
+            alert_type="NegativeTrend",
             description=description,
             patient_id=patient_id,
             provider_id=provider_id,

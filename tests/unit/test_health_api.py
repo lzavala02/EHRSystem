@@ -13,10 +13,9 @@ def test_root_endpoint_serves_frontend() -> None:
     response = client.get("/")
 
     assert response.status_code == 200
-    # Frontend is not built in test environment, so we expect the error message
-    # In production with built frontend, this would return HTML
-    payload = response.json()
-    assert "error" in payload or "<!DOCTYPE" in response.text
+    # The root route serves the SPA shell when the frontend build is present.
+    assert "<!doctype" in response.text.lower()
+    assert response.headers["content-type"].startswith("text/html")
 
 
 def test_liveness_endpoint_reports_service_up() -> None:

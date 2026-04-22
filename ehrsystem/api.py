@@ -14,8 +14,8 @@ import sentry_sdk
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import FileResponse, Response
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg import connect
 from pydantic import BaseModel
 from redis import Redis
@@ -78,7 +78,9 @@ app.add_middleware(
 security = HTTPBearer(auto_error=False)
 
 # Serve frontend static files if build exists
-frontend_dist_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+frontend_dist_path = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "frontend", "dist"
+)
 index_html_path = os.path.join(frontend_dist_path, "index.html")
 
 
@@ -356,9 +358,17 @@ def _rebuild_sync_status_cache(patient_id: str) -> None:
 
 
 def _build_alert_payload(alert: dict[str, object]) -> dict[str, str]:
+    raw_alert_type = str(alert.get("alert_type") or "")
+    alert_type_map = {
+        "Data Conflict": "SyncConflict",
+        "SyncConflict": "SyncConflict",
+        "Negative Trend": "NegativeTrend",
+        "NegativeTrend": "NegativeTrend",
+    }
+
     return {
         "alert_id": str(alert["alert_id"]),
-        "alert_type": str(alert["alert_type"]),
+        "alert_type": alert_type_map.get(raw_alert_type, raw_alert_type),
         "patient_id": str(alert.get("patient_id") or ""),
         "provider_id": str(alert.get("provider_id") or "prov-pcp"),
         "description": str(alert["description"]),
@@ -621,7 +631,9 @@ def liveness() -> dict[str, str]:
     return {"status": "ok", "service": "api", "environment": settings.app_env}
 
 
-@app.api_route("/health", methods=["GET", "HEAD"], response_class=Response, response_model=None)
+@app.api_route(
+    "/health", methods=["GET", "HEAD"], response_class=Response, response_model=None
+)
 def health() -> Response:
     """Simple uptime endpoint suitable for external uptime monitors."""
 

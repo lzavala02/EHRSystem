@@ -155,7 +155,7 @@ def test_sync_patient_bidirectional_generates_provider_conflict_alerts() -> None
     assert len(pulled) == 1
     assert len(conflicts) == 1
     assert len(alerts) == 1
-    assert alerts[0].alert_type == "Data Conflict"
+    assert alerts[0].alert_type == "SyncConflict"
     assert alerts[0].system_id == "sys-epic"
 
 

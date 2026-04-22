@@ -94,6 +94,7 @@ Scope constraints remain unchanged:
 
 ### Day 7: Symptom Logging (Psoriasis-Specific Enforcement)
 - Engineer A
+  - Complete provider conflict-resolution UI follow-up for sync conflicts, wiring the manual resolution workflow from the Day 6 conflict APIs.
   - Strengthen validation middleware and persistence constraints for chronic disease-specific payload handling.
   - Verify schema constraints align with migration and ORM model behavior.
   - Verify frontend-backend schema parity for symptom payload validation and error contract handling.

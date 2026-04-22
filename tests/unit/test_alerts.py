@@ -19,7 +19,7 @@ def test_provider_alert_service_creates_alerts_and_shared_report() -> None:
     populated_fields = service.auto_populate_redundant_fields("pat-1")
     share_message = service.quick_share_progress_report("pat-1", "prov-1")
 
-    assert conflict_alert.alert_type == "Data Conflict"
-    assert trend_alert.alert_type == "Negative Trend"
+    assert conflict_alert.alert_type == "SyncConflict"
+    assert trend_alert.alert_type == "NegativeTrend"
     assert populated_fields == {"Medication": "Aspirin"}
     assert "Progress report shared" in share_message

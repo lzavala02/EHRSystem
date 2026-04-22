@@ -221,6 +221,7 @@ export interface Alert {
   alert_type: 'NegativeTrend' | 'Negative Trend' | 'SyncConflict' | 'Data Conflict';
   patient_id: string;
   provider_id?: string;
+  system_id: string;
   description: string;
   status: 'Active' | 'Resolved';
   triggered_at: string; // ISO 8601 UTC

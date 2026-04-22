@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from copy import deepcopy
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 from uuid import uuid4
 
 from .models import (
@@ -152,11 +152,16 @@ class EpicAdapter(FHIRAdapter):
             "entry": entries,
         }
 
-    def _parse_fhir_r4_bundle(self, patient_id: str, bundle: dict[str, object]) -> list[MedicalRecordItem]:
+    def _parse_fhir_r4_bundle(
+        self, patient_id: str, bundle: dict[str, object]
+    ) -> list[MedicalRecordItem]:
         parsed_records: list[MedicalRecordItem] = []
-        for entry in bundle.get("entry", []):
-            resource = entry.get("resource", {})
-            category_items = resource.get("category", [{}])
+        entries = cast(list[dict[str, object]], bundle.get("entry", []))
+        for entry in entries:
+            resource = cast(dict[str, object], entry.get("resource", {}))
+            category_items = cast(
+                list[dict[str, object]], resource.get("category", [{"text": "Unknown"}])
+            )
             category_text = category_items[0].get("text", "Unknown")
             effective = resource.get("effectiveDateTime")
             parsed_records.append(
@@ -197,7 +202,9 @@ class NextGenAdapter(HL7Adapter):
     def _build_hl7_message(
         self, patient_id: str, records: Iterable[MedicalRecordItem]
     ) -> str:
-        segments = [f"MSH|^~\\&|CLINIC|EHR|NEXTGEN|EHR|{self._utc_timestamp()}||ORU^R01"]
+        segments = [
+            f"MSH|^~\\&|CLINIC|EHR|NEXTGEN|EHR|{self._utc_timestamp()}||ORU^R01"
+        ]
         segments.append(f"PID|||{patient_id}")
         for record in records:
             segments.append(
@@ -210,22 +217,24 @@ class NextGenAdapter(HL7Adapter):
     def _utc_timestamp() -> str:
         return datetime.now(timezone.utc).strftime("%Y%m%d%H%M%SZ")
 
-    def _parse_hl7_message(self, patient_id: str, message: str) -> list[MedicalRecordItem]:
+    def _parse_hl7_message(
+        self, patient_id: str, message: str
+    ) -> list[MedicalRecordItem]:
         records: list[MedicalRecordItem] = []
         for line in message.splitlines():
             if not line.startswith("OBX|"):
                 continue
             fields = line.split("|")
-            if len(fields) < 8:
+            if len(fields) < 7:
                 continue
             records.append(
                 MedicalRecordItem(
-                    record_id=fields[7] or f"nextgen-{uuid4()}",
+                    record_id=fields[6] or f"nextgen-{uuid4()}",
                     patient_id=patient_id,
                     system_id=self.system_id,
-                    category=fields[4],
-                    value_description=fields[5],
-                    recorded_at=datetime.fromisoformat(fields[6]),
+                    category=fields[3],
+                    value_description=fields[4],
+                    recorded_at=datetime.fromisoformat(fields[5]),
                 )
             )
         return records
@@ -453,7 +462,7 @@ class CrossSystemSyncService:
 
         return Alert(
             alert_id=str(uuid4()),
-            alert_type="Data Conflict",
+            alert_type="SyncConflict",
             description=(
                 f"{conflict.system_name} reported a conflict for {conflict.category}: "
                 f"local='{conflict.local_value}' remote='{conflict.remote_value}'."
@@ -490,7 +499,9 @@ class CrossSystemSyncService:
                 conflict_alert = self.report_conflict(conflict)
             provider_alerts.append(conflict_alert)
 
-        self._open_conflicts_by_patient[patient_id] = [deepcopy(conflict) for conflict in conflicts]
+        self._open_conflicts_by_patient[patient_id] = [
+            deepcopy(conflict) for conflict in conflicts
+        ]
 
         self.push_local_changes(patient_id)
         return pulled_records, conflicts, provider_alerts
@@ -498,7 +509,10 @@ class CrossSystemSyncService:
     def get_open_conflicts(self, patient_id: str) -> list[SyncConflict]:
         """Return unresolved sync conflicts for manual provider resolution."""
 
-        return [deepcopy(conflict) for conflict in self._open_conflicts_by_patient.get(patient_id, [])]
+        return [
+            deepcopy(conflict)
+            for conflict in self._open_conflicts_by_patient.get(patient_id, [])
+        ]
 
     def resolve_conflict(
         self,
