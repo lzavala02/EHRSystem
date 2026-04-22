@@ -44,6 +44,17 @@ def test_health_endpoint_returns_plain_text_ok() -> None:
     assert response.headers["content-type"].startswith("text/plain")
 
 
+def test_health_endpoint_supports_head() -> None:
+    """Health should accept HEAD requests for monitor compatibility."""
+
+    client = TestClient(api.app)
+
+    response = client.head("/health")
+
+    assert response.status_code == 200
+    assert response.text == ""
+
+
 def test_readiness_endpoint_checks_dependencies(monkeypatch) -> None:
     """Readiness should report dependency checks as up when pings succeed."""
 

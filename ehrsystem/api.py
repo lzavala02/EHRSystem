@@ -593,7 +593,7 @@ def liveness() -> dict[str, str]:
     return {"status": "ok", "service": "api", "environment": settings.app_env}
 
 
-@app.get("/health", response_class=Response, response_model=None)
+@app.api_route("/health", methods=["GET", "HEAD"], response_class=Response, response_model=None)
 def health() -> Response:
     """Simple uptime endpoint suitable for external uptime monitors."""
 
