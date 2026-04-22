@@ -15,7 +15,6 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from psycopg import connect
 from pydantic import BaseModel
@@ -80,8 +79,7 @@ security = HTTPBearer(auto_error=False)
 
 # Serve frontend static files if build exists
 frontend_dist_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
-if os.path.exists(frontend_dist_path):
-    app.mount("/static", StaticFiles(directory=frontend_dist_path), name="static")
+index_html_path = os.path.join(frontend_dist_path, "index.html")
 
 
 def _utc_now() -> datetime:
@@ -583,9 +581,8 @@ def require_roles(
 @app.get("/", response_class=FileResponse, response_model=None)
 def root():
     """Serve frontend SPA at root."""
-    index_path = os.path.join(frontend_dist_path, "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
+    if os.path.exists(index_html_path):
+        return FileResponse(index_html_path)
     return {"error": "Frontend build not found. Run: npm run build in frontend/"}
 
 
@@ -1301,15 +1298,14 @@ app.include_router(router, prefix="/api/v1")
 @app.get("/{full_path:path}", response_class=FileResponse, response_model=None)
 def serve_frontend(full_path: str):
     """Serve frontend SPA. For unmapped routes, serve index.html for client-side routing."""
-    # If file extension exists, it's a static asset request - let 404 happen naturally
-    if "." in full_path.split("/")[-1]:
-        index_path = os.path.join(frontend_dist_path, "index.html")
-        if os.path.exists(index_path):
-            return FileResponse(index_path)
-        return {"error": "Frontend build not found. Run: npm run build in frontend/"}
+    normalized_path = os.path.normpath(full_path).lstrip(os.sep)
+    candidate_path = os.path.join(frontend_dist_path, normalized_path)
 
-    # For routes without file extension, serve index.html for client-side routing
-    index_path = os.path.join(frontend_dist_path, "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-    return {"error": "Frontend not found. Run: npm run build in frontend/"}
+    if os.path.isfile(candidate_path):
+        return FileResponse(candidate_path)
+
+    # SPA fallback only for client-side routes, not for missing JS/CSS assets.
+    if "." not in full_path.split("/")[-1] and os.path.exists(index_html_path):
+        return FileResponse(index_html_path)
+
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
