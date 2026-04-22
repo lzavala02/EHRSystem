@@ -218,7 +218,7 @@ export interface TriggerChecklist {
 
 export interface Alert {
   alert_id: string;
-  alert_type: 'NegativeTrend' | 'SyncConflict';
+  alert_type: 'NegativeTrend' | 'Negative Trend' | 'SyncConflict' | 'Data Conflict';
   patient_id: string;
   provider_id?: string;
   description: string;
@@ -231,6 +231,27 @@ export interface AlertListResponse {
   total: number;
   page: number;
   page_size: number;
+}
+
+export interface SyncConflictItem {
+  category: string;
+  system_name: string;
+  local_value: string;
+  remote_value: string;
+  detected_at: string;
+  requires_manual_resolution: boolean;
+}
+
+export interface SyncConflictListResponse {
+  patient_id: string;
+  conflicts: SyncConflictItem[];
+  total: number;
+}
+
+export interface SyncConflictResolveRequest {
+  category: string;
+  system_name: string;
+  resolution: 'accept_local' | 'accept_remote';
 }
 
 // Report Types

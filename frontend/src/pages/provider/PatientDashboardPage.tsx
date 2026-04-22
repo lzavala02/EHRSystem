@@ -3,6 +3,7 @@ import { ErrorAlert } from '../../components/Alerts';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 import { useSelectedPatient } from '../../context/SelectedPatientContext';
 import { useFetch } from '../../hooks/useFetch';
+import { useSyncAlertObservability } from '../../hooks/useSyncAlertObservability';
 import {
   DashboardSnapshot,
   DashboardSyncStatus,
@@ -95,6 +96,11 @@ export function ProviderPatientDashboardPage() {
     skip: !patientId
   });
 
+  const { syncIncidentId } = useSyncAlertObservability({
+    scope: 'provider-dashboard',
+    syncError
+  });
+
   if (patientsLoading || dashboardLoading || syncLoading) {
     return <LoadingSpinner message="Loading provider dashboard..." />;
   }
@@ -150,7 +156,13 @@ export function ProviderPatientDashboardPage() {
 
       {(patientsError || dashboardError || syncError) && (
         <ErrorAlert
-          message={patientsError?.message ?? dashboardError?.message ?? syncError?.message ?? 'Unable to load provider dashboard'}
+          message={
+            patientsError?.message ??
+            dashboardError?.message ??
+            (syncError
+              ? `Unable to load sync status. Incident: ${syncIncidentId ?? 'capturing'}`
+              : 'Unable to load provider dashboard')
+          }
         />
       )}
 

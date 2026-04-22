@@ -157,3 +157,29 @@ def test_sync_patient_bidirectional_generates_provider_conflict_alerts() -> None
     assert len(alerts) == 1
     assert alerts[0].alert_type == "Data Conflict"
     assert alerts[0].system_id == "sys-epic"
+
+
+def test_day6_adapters_emit_protocol_specific_outbound_payloads() -> None:
+    """Day 6 adapters should materialize FHIR R4/HL7 payloads on push paths."""
+
+    local_record = MedicalRecordItem(
+        record_id="local-6",
+        patient_id="pat-6",
+        system_id=None,
+        category="Labs",
+        value_description="CRP normal",
+        recorded_at=datetime(2026, 4, 8, tzinfo=timezone.utc),
+    )
+    epic_adapter = EpicAdapter()
+    nextgen_adapter = NextGenAdapter()
+    service = CrossSystemSyncService(
+        adapters=[epic_adapter, nextgen_adapter],
+        local_records=[local_record],
+    )
+
+    service.push_local_changes("pat-6")
+
+    assert isinstance(epic_adapter._last_outbound_payload, dict)
+    assert epic_adapter._last_outbound_payload.get("resourceType") == "Bundle"
+    assert isinstance(nextgen_adapter._last_outbound_payload, str)
+    assert "MSH|^~\\&|CLINIC|EHR|NEXTGEN|EHR" in nextgen_adapter._last_outbound_payload

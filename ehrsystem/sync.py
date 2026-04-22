@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from copy import deepcopy
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 from uuid import uuid4
 
 from .models import (
@@ -52,6 +52,7 @@ class EHRProtocolAdapter(ABC):
         self.protocol = protocol
         self._records_by_patient: dict[str, list[MedicalRecordItem]] = {}
         self._last_pushed_patient_id: str | None = None
+        self._last_outbound_payload: dict[str, object] | str | None = None
 
         for record in records or []:
             self._records_by_patient.setdefault(record.patient_id, []).append(
@@ -129,6 +130,59 @@ class EpicAdapter(FHIRAdapter):
     def __init__(self, records: Iterable[MedicalRecordItem] | None = None) -> None:
         super().__init__(system_name="Epic", system_id="sys-epic", records=records)
 
+    def _build_fhir_r4_bundle(
+        self, patient_id: str, records: Iterable[MedicalRecordItem]
+    ) -> dict[str, object]:
+        entries = [
+            {
+                "resource": {
+                    "resourceType": "Observation",
+                    "id": record.record_id,
+                    "subject": {"reference": f"Patient/{patient_id}"},
+                    "category": [{"text": record.category}],
+                    "valueString": record.value_description,
+                    "effectiveDateTime": record.recorded_at.isoformat(),
+                }
+            }
+            for record in records
+        ]
+        return {
+            "resourceType": "Bundle",
+            "type": "collection",
+            "entry": entries,
+        }
+
+    def _parse_fhir_r4_bundle(self, patient_id: str, bundle: dict[str, object]) -> list[MedicalRecordItem]:
+        parsed_records: list[MedicalRecordItem] = []
+        for entry in bundle.get("entry", []):
+            resource = entry.get("resource", {})
+            category_items = resource.get("category", [{}])
+            category_text = category_items[0].get("text", "Unknown")
+            effective = resource.get("effectiveDateTime")
+            parsed_records.append(
+                MedicalRecordItem(
+                    record_id=str(resource.get("id", f"epic-{uuid4()}")),
+                    patient_id=patient_id,
+                    system_id=self.system_id,
+                    category=str(category_text),
+                    value_description=str(resource.get("valueString", "")),
+                    recorded_at=datetime.fromisoformat(str(effective)),
+                )
+            )
+        return parsed_records
+
+    def pull_remote_changes(self, patient_id: str) -> list[MedicalRecordItem]:
+        raw_records = super().pull_remote_changes(patient_id)
+        bundle = self._build_fhir_r4_bundle(patient_id, raw_records)
+        return self._parse_fhir_r4_bundle(patient_id, bundle)
+
+    def push_local_changes(self, patient_id: str) -> None:
+        payload = self._build_fhir_r4_bundle(
+            patient_id, self._records_by_patient.get(patient_id, [])
+        )
+        self._last_outbound_payload = payload
+        super().push_local_changes(patient_id)
+
 
 class NextGenAdapter(HL7Adapter):
     """Day 5 base adapter representing NextGen push/pull integration."""
@@ -139,6 +193,54 @@ class NextGenAdapter(HL7Adapter):
             system_id="sys-nextgen",
             records=records,
         )
+
+    def _build_hl7_message(
+        self, patient_id: str, records: Iterable[MedicalRecordItem]
+    ) -> str:
+        segments = [f"MSH|^~\\&|CLINIC|EHR|NEXTGEN|EHR|{self._utc_timestamp()}||ORU^R01"]
+        segments.append(f"PID|||{patient_id}")
+        for record in records:
+            segments.append(
+                "OBX|||"
+                f"{record.category}|{record.value_description}|{record.recorded_at.isoformat()}|{record.record_id}"
+            )
+        return "\n".join(segments)
+
+    @staticmethod
+    def _utc_timestamp() -> str:
+        return datetime.now(timezone.utc).strftime("%Y%m%d%H%M%SZ")
+
+    def _parse_hl7_message(self, patient_id: str, message: str) -> list[MedicalRecordItem]:
+        records: list[MedicalRecordItem] = []
+        for line in message.splitlines():
+            if not line.startswith("OBX|"):
+                continue
+            fields = line.split("|")
+            if len(fields) < 8:
+                continue
+            records.append(
+                MedicalRecordItem(
+                    record_id=fields[7] or f"nextgen-{uuid4()}",
+                    patient_id=patient_id,
+                    system_id=self.system_id,
+                    category=fields[4],
+                    value_description=fields[5],
+                    recorded_at=datetime.fromisoformat(fields[6]),
+                )
+            )
+        return records
+
+    def pull_remote_changes(self, patient_id: str) -> list[MedicalRecordItem]:
+        raw_records = super().pull_remote_changes(patient_id)
+        message = self._build_hl7_message(patient_id, raw_records)
+        return self._parse_hl7_message(patient_id, message)
+
+    def push_local_changes(self, patient_id: str) -> None:
+        message = self._build_hl7_message(
+            patient_id, self._records_by_patient.get(patient_id, [])
+        )
+        self._last_outbound_payload = message
+        super().push_local_changes(patient_id)
 
 
 class CrossSystemSyncService:
@@ -162,6 +264,7 @@ class CrossSystemSyncService:
         self._last_remote_snapshot_by_patient_system: dict[
             tuple[str, str], list[MedicalRecordItem]
         ] = {}
+        self._open_conflicts_by_patient: dict[str, list[SyncConflict]] = {}
 
         for record in local_records or []:
             self._local_records_by_patient.setdefault(record.patient_id, []).append(
@@ -379,12 +482,60 @@ class CrossSystemSyncService:
                     system_id=_default_system_id(conflict.system_name),
                     description=(
                         f"{conflict.system_name} conflict in {conflict.category}: "
-                        f"local='{conflict.local_value}' remote='{conflict.remote_value}'."
+                        f"local='{conflict.local_value}' remote='{conflict.remote_value}'. "
+                        "Manual resolution required."
                     ),
                 )
             else:
                 conflict_alert = self.report_conflict(conflict)
             provider_alerts.append(conflict_alert)
 
+        self._open_conflicts_by_patient[patient_id] = [deepcopy(conflict) for conflict in conflicts]
+
         self.push_local_changes(patient_id)
         return pulled_records, conflicts, provider_alerts
+
+    def get_open_conflicts(self, patient_id: str) -> list[SyncConflict]:
+        """Return unresolved sync conflicts for manual provider resolution."""
+
+        return [deepcopy(conflict) for conflict in self._open_conflicts_by_patient.get(patient_id, [])]
+
+    def resolve_conflict(
+        self,
+        patient_id: str,
+        category: str,
+        system_name: str,
+        resolution: Literal["accept_local", "accept_remote"],
+    ) -> SyncConflict | None:
+        """Resolve a conflict manually by choosing local or remote source of truth."""
+
+        unresolved_conflicts = self._open_conflicts_by_patient.get(patient_id, [])
+        matching_conflict: SyncConflict | None = None
+        remaining_conflicts: list[SyncConflict] = []
+        for conflict in unresolved_conflicts:
+            if (
+                matching_conflict is None
+                and conflict.category == category
+                and conflict.system_name == system_name
+            ):
+                matching_conflict = deepcopy(conflict)
+                continue
+            remaining_conflicts.append(conflict)
+
+        if matching_conflict is None:
+            return None
+
+        if resolution == "accept_remote":
+            for adapter in self.adapters:
+                if adapter.system_name != system_name:
+                    continue
+                for remote_record in adapter.pull_remote_changes(patient_id):
+                    if remote_record.category == category:
+                        self._upsert_local_record(remote_record)
+                        break
+                break
+        else:
+            self.push_local_changes(patient_id)
+
+        self._open_conflicts_by_patient[patient_id] = remaining_conflicts
+        return matching_conflict

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ErrorAlert } from '../../components/Alerts';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 import { useFetch } from '../../hooks/useFetch';
+import { useSyncAlertObservability } from '../../hooks/useSyncAlertObservability';
 import { Alert, AlertListResponse } from '../../types/api';
 import { formatUtcTimestamp, getRelativeTime } from '../../utils/date';
 
@@ -13,7 +14,9 @@ function normalizeAlerts(payload: Alert[] | AlertListResponse | null): Alert[] {
 
 export function AlertsDashboardPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'Active' | 'Resolved'>('all');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'NegativeTrend' | 'SyncConflict'>('all');
+  const [typeFilter, setTypeFilter] = useState<
+    'all' | 'NegativeTrend' | 'Negative Trend' | 'SyncConflict' | 'Data Conflict'
+  >('all');
 
   const {
     data,
@@ -21,6 +24,11 @@ export function AlertsDashboardPage() {
     error,
     refetch
   } = useFetch<Alert[] | AlertListResponse>('/v1/alerts');
+
+  const { alertsIncidentId } = useSyncAlertObservability({
+    scope: 'provider-alerts',
+    alertsError: error
+  });
 
   const alerts = useMemo(() => normalizeAlerts(data ?? null), [data]);
 
@@ -50,7 +58,11 @@ export function AlertsDashboardPage() {
         </button>
       </div>
 
-      {error && <ErrorAlert message={error.message} />}
+      {error && (
+        <ErrorAlert
+          message={`Unable to load alerts. Incident: ${alertsIncidentId ?? 'capturing'}`}
+        />
+      )}
 
       <div className="bg-white rounded-lg shadow p-6 space-y-4">
         <div className="grid gap-4 md:grid-cols-3">
@@ -76,12 +88,23 @@ export function AlertsDashboardPage() {
             <select
               id="type-filter"
               value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value as 'all' | 'NegativeTrend' | 'SyncConflict')}
+              onChange={(e) =>
+                setTypeFilter(
+                  e.target.value as
+                    | 'all'
+                    | 'NegativeTrend'
+                    | 'Negative Trend'
+                    | 'SyncConflict'
+                    | 'Data Conflict'
+                )
+              }
               className="w-full border border-clinical-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-clinical-500"
             >
               <option value="all">All types</option>
               <option value="NegativeTrend">Negative Trend</option>
+              <option value="Negative Trend">Negative Trend (spaced)</option>
               <option value="SyncConflict">Sync Conflict</option>
+              <option value="Data Conflict">Data Conflict</option>
             </select>
           </div>
           <div className="flex items-end">
@@ -110,7 +133,7 @@ export function AlertsDashboardPage() {
                   <div className="flex gap-2">
                     <span
                       className={`inline-flex px-2 py-1 text-xs rounded font-medium ${
-                        alert.alert_type === 'NegativeTrend'
+                        alert.alert_type === 'NegativeTrend' || alert.alert_type === 'Negative Trend'
                           ? 'bg-health-warning text-white'
                           : 'bg-health-info text-white'
                       }`}

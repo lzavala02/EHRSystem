@@ -167,6 +167,12 @@ class QuickShareRequest(BaseModel):
     message: str | None = None
 
 
+class SyncConflictResolveRequest(BaseModel):
+    category: str
+    system_name: str
+    resolution: Literal["accept_local", "accept_remote"]
+
+
 USERS_BY_ID: dict[str, UserRecord] = {
     "user-patient-1": UserRecord(
         user_id="user-patient-1",
@@ -360,6 +366,28 @@ def _build_alert_payload(alert: dict[str, object]) -> dict[str, str]:
         "triggered_at": str(alert["created_at"]),
         "system_id": str(alert.get("system_id") or "sys-unknown"),
     }
+
+
+def _mark_conflict_alerts_resolved(
+    patient_id: str,
+    category: str,
+    system_name: str,
+) -> None:
+    category_fragment = category.casefold()
+    system_fragment = system_name.casefold()
+    for alert_payload in ALERT_PAYLOADS:
+        alert_type = str(alert_payload.get("alert_type") or "")
+        description = str(alert_payload.get("description") or "")
+        if str(alert_payload.get("patient_id") or "") != patient_id:
+            continue
+        if alert_type not in {"Data Conflict", "SyncConflict"}:
+            continue
+        description_casefold = description.casefold()
+        if (
+            category_fragment in description_casefold
+            and system_fragment in description_casefold
+        ):
+            alert_payload["status"] = "Resolved"
 
 
 DASHBOARD_SERVICE = UnifiedChronicDiseaseDashboardService(
@@ -1048,6 +1076,77 @@ def get_patient_dashboard_sync_status(
         context="dashboard.sync_status.items",
     )
     return payload
+
+
+@router.get("/sync/patients/{patient_id}/conflicts")
+def list_sync_conflicts(
+    patient_id: str,
+    user: Annotated[UserRecord, Depends(require_roles("Provider", "Admin"))],
+) -> dict[str, object]:
+    if user.role == "Provider" and user.provider_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Provider profile required"
+        )
+
+    conflicts = SYNC_SERVICE.get_open_conflicts(patient_id)
+    return {
+        "patient_id": patient_id,
+        "conflicts": [
+            {
+                "category": conflict.category,
+                "system_name": conflict.system_name,
+                "local_value": conflict.local_value,
+                "remote_value": conflict.remote_value,
+                "detected_at": (
+                    conflict.detected_at.isoformat()
+                    if conflict.detected_at is not None
+                    else _utc_now().isoformat()
+                ),
+                "requires_manual_resolution": True,
+            }
+            for conflict in conflicts
+        ],
+        "total": len(conflicts),
+    }
+
+
+@router.post("/sync/patients/{patient_id}/conflicts/resolve")
+def resolve_sync_conflict(
+    patient_id: str,
+    payload: SyncConflictResolveRequest,
+    user: Annotated[UserRecord, Depends(require_roles("Provider", "Admin"))],
+) -> dict[str, str]:
+    if user.role == "Provider" and user.provider_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Provider profile required"
+        )
+
+    resolved_conflict = SYNC_SERVICE.resolve_conflict(
+        patient_id=patient_id,
+        category=payload.category,
+        system_name=payload.system_name,
+        resolution=payload.resolution,
+    )
+    if resolved_conflict is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sync conflict not found",
+        )
+
+    _mark_conflict_alerts_resolved(
+        patient_id=patient_id,
+        category=payload.category,
+        system_name=payload.system_name,
+    )
+    _rebuild_sync_status_cache(patient_id)
+
+    return {
+        "status": "resolved",
+        "patient_id": patient_id,
+        "category": payload.category,
+        "system_name": payload.system_name,
+        "resolution": payload.resolution,
+    }
 
 
 @router.get("/symptoms/triggers")

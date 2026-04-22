@@ -2,6 +2,7 @@ import { ErrorAlert } from '../../components/Alerts';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 import { useAuth } from '../../context/AuthContext';
 import { useFetch } from '../../hooks/useFetch';
+import { useSyncAlertObservability } from '../../hooks/useSyncAlertObservability';
 import { DashboardSnapshot, DashboardSyncStatus } from '../../types/api';
 import { formatUtcTimestamp, getRelativeTime, isStale } from '../../utils/date';
 
@@ -62,6 +63,11 @@ export function PatientDashboardPage() {
     skip: !patientId
   });
 
+  const { syncIncidentId } = useSyncAlertObservability({
+    scope: 'patient-dashboard',
+    syncError
+  });
+
   if (!patientId) {
     return <ErrorAlert message="No patient profile is linked to your account." />;
   }
@@ -113,7 +119,12 @@ export function PatientDashboardPage() {
 
       {(dashboardError || syncError) && (
         <ErrorAlert
-          message={dashboardError?.message ?? syncError?.message ?? 'Unable to load dashboard data'}
+          message={
+            dashboardError?.message ??
+            (syncError
+              ? `Unable to load sync status. Incident: ${syncIncidentId ?? 'capturing'}`
+              : 'Unable to load dashboard data')
+          }
         />
       )}
 
