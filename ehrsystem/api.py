@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from psycopg import connect
 from pydantic import BaseModel
 from redis import Redis
@@ -593,11 +593,11 @@ def liveness() -> dict[str, str]:
     return {"status": "ok", "service": "api", "environment": settings.app_env}
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
+@app.get("/health", response_class=Response, response_model=None)
+def health() -> Response:
     """Simple uptime endpoint suitable for external uptime monitors."""
 
-    return {"status": "ok", "service": "api", "environment": settings.app_env}
+    return Response(content="OK", media_type="text/plain")
 
 
 @app.get("/health/ready")

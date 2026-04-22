@@ -32,6 +32,18 @@ def test_liveness_endpoint_reports_service_up() -> None:
     assert payload["service"] == "api"
 
 
+def test_health_endpoint_returns_plain_text_ok() -> None:
+    """Health should return plain text OK for uptime monitors."""
+
+    client = TestClient(api.app)
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.text == "OK"
+    assert response.headers["content-type"].startswith("text/plain")
+
+
 def test_readiness_endpoint_checks_dependencies(monkeypatch) -> None:
     """Readiness should report dependency checks as up when pings succeed."""
 
