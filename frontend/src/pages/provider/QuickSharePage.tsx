@@ -5,8 +5,13 @@ import { useAuth } from '../../context/AuthContext';
 import { useSelectedPatient } from '../../context/SelectedPatientContext';
 import { useFetch } from '../../hooks/useFetch';
 import { useJobStatus } from '../../hooks/useJobStatus';
-import { PatientListItem, PatientListResponse, TrendReportResponse } from '../../types/api';
-import { getUtcDayEnd, getUtcDayStart } from '../../utils/date';
+import {
+  PatientListItem,
+  PatientListResponse,
+  QuickSharePrefillResponse,
+  TrendReportResponse
+} from '../../types/api';
+import { formatUtcTimestamp, getUtcDayEnd, getUtcDayStart } from '../../utils/date';
 
 function normalizePatients(payload: PatientListItem[] | PatientListResponse | null): PatientListItem[] {
   if (!payload) return [];
@@ -16,6 +21,19 @@ function normalizePatients(payload: PatientListItem[] | PatientListResponse | nu
 
 function toDateInputValue(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+function toDateInputValueFromIso(rawValue: unknown): string | null {
+  if (typeof rawValue !== 'string' || !rawValue.trim()) {
+    return null;
+  }
+
+  const parsed = new Date(rawValue);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed.toISOString().slice(0, 10);
 }
 
 export function QuickSharePage() {
@@ -35,6 +53,9 @@ export function QuickSharePage() {
   const [message, setMessage] = useState('');
   const [startDate, setStartDate] = useState(toDateInputValue(new Date(Date.now() - 1000 * 60 * 60 * 24 * 30)));
   const [endDate, setEndDate] = useState(toDateInputValue(new Date()));
+  const [startDateTouched, setStartDateTouched] = useState(false);
+  const [endDateTouched, setEndDateTouched] = useState(false);
+  const [prefillSourceTimestamp, setPrefillSourceTimestamp] = useState<string | null>(null);
 
   const [jobUrl, setJobUrl] = useState<string | null>(null);
   const [currentReportId, setCurrentReportId] = useState<string | null>(null);
@@ -55,6 +76,45 @@ export function QuickSharePage() {
       setPatientId(selectedPatientId);
     }
   }, [selectedPatientId, patientId]);
+
+  useEffect(() => {
+    if (!patientId) {
+      setPrefillSourceTimestamp(null);
+      return;
+    }
+
+    const loadPrefill = async () => {
+      try {
+        const apiClient = getApiClient();
+        const response = await apiClient.get<QuickSharePrefillResponse>(
+          `/v1/provider/patients/${patientId}/quick-share-prefill`
+        );
+        const fields = response.data.fields ?? {};
+
+        const suggestedToProviderId =
+          typeof fields['to_provider_id'] === 'string' ? String(fields['to_provider_id']) : '';
+        const suggestedMessage = typeof fields['message'] === 'string' ? String(fields['message']) : '';
+        const suggestedStartDate = toDateInputValueFromIso(fields['period_start']);
+        const suggestedEndDate = toDateInputValueFromIso(fields['period_end']);
+
+        setToProviderId((current) => current || suggestedToProviderId);
+        setMessage((current) => current || suggestedMessage);
+
+        if (!startDateTouched && suggestedStartDate) {
+          setStartDate(suggestedStartDate);
+        }
+        if (!endDateTouched && suggestedEndDate) {
+          setEndDate(suggestedEndDate);
+        }
+
+        setPrefillSourceTimestamp(response.data.source_timestamp_utc);
+      } catch {
+        setPrefillSourceTimestamp(null);
+      }
+    };
+
+    void loadPrefill();
+  }, [patientId, startDateTouched, endDateTouched]);
 
   useEffect(() => {
     if (jobStatus === 'completed') {
@@ -163,6 +223,8 @@ export function QuickSharePage() {
             onChange={(e) => {
               setPatientId(e.target.value);
               setSelectedPatientId(e.target.value || null);
+              setStartDateTouched(false);
+              setEndDateTouched(false);
             }}
             disabled={patientsLoading}
             className="w-full border border-clinical-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-clinical-500"
@@ -185,7 +247,10 @@ export function QuickSharePage() {
               id="start-date"
               type="date"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => {
+                setStartDateTouched(true);
+                setStartDate(e.target.value);
+              }}
               className="w-full border border-clinical-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-clinical-500"
             />
           </div>
@@ -197,11 +262,20 @@ export function QuickSharePage() {
               id="end-date"
               type="date"
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              onChange={(e) => {
+                setEndDateTouched(true);
+                setEndDate(e.target.value);
+              }}
               className="w-full border border-clinical-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-clinical-500"
             />
           </div>
         </div>
+
+        {prefillSourceTimestamp && (
+          <p className="text-sm text-clinical-600">
+            Prefilled from your most recent visit on {formatUtcTimestamp(prefillSourceTimestamp)}.
+          </p>
+        )}
 
         <button
           type="submit"

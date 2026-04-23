@@ -299,6 +299,14 @@ export interface QuickShareResponse {
   share_id: string;
   status: 'pending';
   created_at: string;
+  message?: string;
+}
+
+export interface QuickSharePrefillResponse {
+  patient_id: string;
+  provider_id: string;
+  fields: Record<string, unknown>;
+  source_timestamp_utc: string | null;
 }
 
 // Patient List (Provider View)

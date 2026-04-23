@@ -104,6 +104,25 @@ def test_provider_can_use_report_and_quick_share_routes() -> None:
     assert quick_share_response.json()["status"] == "pending"
 
 
+def test_provider_can_fetch_pair_scoped_quick_share_prefill() -> None:
+    """Providers should receive prefill values for their own patient-provider pair."""
+
+    client = TestClient(api.app)
+    token = _login_and_get_token(client, email="provider@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.get(
+        "/v1/provider/patients/pat-1/quick-share-prefill",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["patient_id"] == "pat-1"
+    assert payload["provider_id"] == "prov-pcp"
+    assert payload["fields"].get("to_provider_id")
+
+
 def test_report_secure_content_token_is_user_bound_and_one_time_use() -> None:
     """Secure report links should be tokenized, user-bound, and single-use."""
 

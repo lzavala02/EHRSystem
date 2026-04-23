@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from copy import deepcopy
 from datetime import datetime, timezone
+from typing import Any
 from uuid import uuid4
 
 from .models import Alert
@@ -19,14 +20,18 @@ class ProviderAlertService:
 
     def __init__(
         self,
-        previous_visit_fields_by_patient: Mapping[str, dict[str, object]] | None = None,
+        previous_visit_fields_by_pair: Mapping[tuple[str, str], dict[str, object]]
+        | None = None,
     ) -> None:
         """Store the last known visit values used for auto-population."""
 
-        self._previous_visit_fields_by_patient = {
-            patient_id: deepcopy(fields)
-            for patient_id, fields in (previous_visit_fields_by_patient or {}).items()
+        self._previous_visit_fields_by_pair: dict[
+            tuple[str, str], dict[str, object]
+        ] = {
+            pair_key: deepcopy(fields)
+            for pair_key, fields in (previous_visit_fields_by_pair or {}).items()
         }
+        self._latest_visit_timestamp_by_pair: dict[tuple[str, str], datetime] = {}
         self._shared_progress_reports: list[str] = []
 
     def create_data_conflict_alert(
@@ -59,10 +64,41 @@ class ProviderAlertService:
             created_at=datetime.now(timezone.utc),
         )
 
-    def auto_populate_redundant_fields(self, patient_id: str) -> dict[str, object]:
+    def record_visit_fields(
+        self,
+        patient_id: str,
+        provider_id: str,
+        fields: Mapping[str, Any],
+        *,
+        visited_at: datetime | None = None,
+    ) -> None:
+        """Persist the latest documentation fields for one patient-provider pair."""
+
+        pair_key = (patient_id, provider_id)
+        event_time = visited_at or datetime.now(timezone.utc)
+        latest_time = self._latest_visit_timestamp_by_pair.get(pair_key)
+
+        if latest_time is not None and event_time < latest_time:
+            return
+
+        self._previous_visit_fields_by_pair[pair_key] = dict(fields)
+        self._latest_visit_timestamp_by_pair[pair_key] = event_time
+
+    def auto_populate_redundant_fields(
+        self, patient_id: str, provider_id: str
+    ) -> dict[str, object]:
         """Return the data needed to prefill repeated documentation fields."""
 
-        return deepcopy(self._previous_visit_fields_by_patient.get(patient_id, {}))
+        return deepcopy(
+            self._previous_visit_fields_by_pair.get((patient_id, provider_id), {})
+        )
+
+    def get_last_visit_timestamp(
+        self, patient_id: str, provider_id: str
+    ) -> datetime | None:
+        """Return when the pair-scoped prefill values were most recently updated."""
+
+        return self._latest_visit_timestamp_by_pair.get((patient_id, provider_id))
 
     def quick_share_progress_report(self, patient_id: str, provider_id: str) -> str:
         """Create the share action used to send a progress report back to the PCP."""

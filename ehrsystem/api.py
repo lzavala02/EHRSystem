@@ -488,8 +488,16 @@ SYMPTOM_SERVICE = SymptomLoggingService(triggers=TRIGGER_CHECKLIST)
 SYMPTOM_LOG_PAYLOADS: list[dict[str, object]] = []
 
 ALERT_SERVICE = ProviderAlertService(
-    previous_visit_fields_by_patient={
-        "pat-1": {"Current Medication": "Topical corticosteroid"}
+    previous_visit_fields_by_pair={
+        (
+            "pat-1",
+            "prov-pcp",
+        ): {
+            "to_provider_id": "prov-derm",
+            "message": "Please review latest symptom progression before the next visit.",
+            "period_start": datetime(2026, 4, 1, tzinfo=UTC).isoformat(),
+            "period_end": datetime(2026, 4, 12, tzinfo=UTC).isoformat(),
+        }
     }
 )
 ALERT_PAYLOADS = [
@@ -1346,6 +1354,17 @@ def create_trend_report(
     )
 
     generated_by_provider_id = user.provider_id or "admin"
+
+    ALERT_SERVICE.record_visit_fields(
+        patient_id=payload.patient_id,
+        provider_id=generated_by_provider_id,
+        fields={
+            "period_start": payload.period_start.isoformat(),
+            "period_end": payload.period_end.isoformat(),
+        },
+        visited_at=_utc_now(),
+    )
+
     job = REPORT_SERVICE.queue_trend_report(
         patient_id=payload.patient_id,
         generated_by_provider_id=generated_by_provider_id,
@@ -1507,6 +1526,14 @@ def quick_share_report(
     if user.role == "Provider" and user.provider_id != payload.from_provider_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
+    prefill_fields = ALERT_SERVICE.auto_populate_redundant_fields(
+        patient_id=payload.patient_id,
+        provider_id=payload.from_provider_id,
+    )
+    message_body = (payload.message or "").strip() or str(
+        prefill_fields.get("message") or "Progress report shared for review."
+    )
+
     share_id = f"share-{uuid4()}"
     secure_message_payload = {
         "message_id": share_id,
@@ -1514,7 +1541,7 @@ def quick_share_report(
         "sender_provider_id": payload.from_provider_id,
         "recipient_provider_id": payload.to_provider_id,
         "report_id": payload.report_id,
-        "message_body": payload.message or "Progress report shared for review.",
+        "message_body": message_body,
         "created_at": _utc_now().isoformat(),
         "delivered_at": _utc_now().isoformat(),
     }
@@ -1545,6 +1572,19 @@ def quick_share_report(
         },
     )
 
+    ALERT_SERVICE.record_visit_fields(
+        patient_id=payload.patient_id,
+        provider_id=payload.from_provider_id,
+        fields={
+            "to_provider_id": payload.to_provider_id,
+            "message": message_body,
+            "report_id": payload.report_id,
+            "period_start": str(report_metadata.get("period_start") or ""),
+            "period_end": str(report_metadata.get("period_end") or ""),
+        },
+        visited_at=_utc_now(),
+    )
+
     message = ALERT_SERVICE.quick_share_progress_report(
         patient_id=payload.patient_id,
         provider_id=payload.to_provider_id,
@@ -1554,6 +1594,30 @@ def quick_share_report(
         "status": "pending",
         "created_at": _utc_now().isoformat(),
         "message": message,
+    }
+
+
+@router.get("/provider/patients/{patient_id}/quick-share-prefill")
+def get_quick_share_prefill(
+    patient_id: str,
+    user: Annotated[UserRecord, Depends(require_roles("Provider", "Admin"))],
+) -> dict[str, object]:
+    if user.role == "Provider" and user.provider_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Provider profile required"
+        )
+
+    provider_id = user.provider_id or "admin"
+    fields = ALERT_SERVICE.auto_populate_redundant_fields(patient_id, provider_id)
+    source_timestamp = ALERT_SERVICE.get_last_visit_timestamp(patient_id, provider_id)
+
+    return {
+        "patient_id": patient_id,
+        "provider_id": provider_id,
+        "fields": fields,
+        "source_timestamp_utc": source_timestamp.isoformat()
+        if source_timestamp
+        else None,
     }
 
 

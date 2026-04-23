@@ -180,6 +180,20 @@ def test_integration_symptom_logging_to_report_to_quick_share() -> None:
         share.get("report_id") == report_id for share in api.SECURE_MESSAGE_PAYLOADS
     )
 
+    prefill_response = client.get(
+        "/v1/provider/patients/pat-1/quick-share-prefill",
+        headers=provider_headers,
+    )
+    assert prefill_response.status_code == 200
+    prefill_payload = prefill_response.json()
+    assert prefill_payload["provider_id"] == "prov-pcp"
+    assert prefill_payload["fields"]["to_provider_id"] == "prov-derm"
+    assert (
+        prefill_payload["fields"]["message"]
+        == "Please review trend before dermatology follow-up."
+    )
+    assert prefill_payload["source_timestamp_utc"] is not None
+
     admin_token = _login_and_get_token(client, email="admin@example.com")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     inbox_response = client.get("/v1/provider/quick-share/inbox", headers=admin_headers)
