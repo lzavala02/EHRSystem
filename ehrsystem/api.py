@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import sentry_sdk
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -36,6 +36,7 @@ from .models import (
     Treatment,
     Trigger,
 )
+from .reports import InMemoryReportService
 from .symptoms import PsoriasisPayload, SymptomLoggingService, SymptomValidationError
 from .sync import CrossSystemSyncService, EpicAdapter, NextGenAdapter
 
@@ -541,10 +542,18 @@ REPORT_METADATA: dict[str, dict[str, str]] = {
     "rep-1": {
         "report_id": "rep-1",
         "patient_id": "pat-1",
+        "generated_by_provider_id": "prov-pcp",
         "generated_at": datetime(2026, 4, 12, 10, 0, tzinfo=UTC).isoformat(),
-        "secure_url": "https://example.org/reports/rep-1",
+        "secure_url": "",
     }
 }
+REPORT_ACCESS_TOKENS: dict[str, dict[str, str]] = {}
+SECURE_MESSAGE_PAYLOADS: list[dict[str, str]] = []
+REPORT_SERVICE = InMemoryReportService(
+    jobs_by_report_id=REPORT_JOBS,
+    report_metadata_by_id=REPORT_METADATA,
+    access_tokens_by_token=REPORT_ACCESS_TOKENS,
+)
 
 
 def _to_session_user_payload(
@@ -614,6 +623,34 @@ def require_roles(
         return user
 
     return _role_dependency
+
+
+def _user_can_access_report(
+    report_metadata: dict[str, str],
+    user: UserRecord,
+) -> bool:
+    if user.role == "Admin":
+        return True
+
+    report_patient_id = report_metadata.get("patient_id")
+    report_owner_provider_id = report_metadata.get("generated_by_provider_id")
+
+    if user.role == "Patient" and user.patient_id == report_patient_id:
+        return True
+
+    if user.role == "Provider":
+        if user.provider_id == report_owner_provider_id:
+            return True
+
+        for share in SECURE_MESSAGE_PAYLOADS:
+            if share.get("report_id") != report_metadata.get("report_id"):
+                continue
+            if share.get("recipient_provider_id") == user.provider_id:
+                return True
+            if share.get("sender_provider_id") == user.provider_id:
+                return True
+
+    return False
 
 
 @app.get("/", response_class=FileResponse, response_model=None)
@@ -1292,7 +1329,7 @@ def list_symptom_logs(
     }
 
 
-@router.post("/symptoms/reports/trend")
+@router.post("/symptoms/reports/trend", status_code=status.HTTP_202_ACCEPTED)
 def create_trend_report(
     payload: TrendReportRequest,
     user: Annotated[UserRecord, Depends(require_roles("Provider", "Admin"))],
@@ -1302,31 +1339,37 @@ def create_trend_report(
             status_code=status.HTTP_403_FORBIDDEN, detail="Provider profile required"
         )
 
-    _ = SYMPTOM_SERVICE.generate_trend_report(
+    trend_report = SYMPTOM_SERVICE.generate_trend_report(
         patient_id=payload.patient_id,
         period_start=payload.period_start,
         period_end=payload.period_end,
     )
 
-    report_id = f"rep-{uuid4()}"
-    created_at = _utc_now().isoformat()
-    REPORT_METADATA[report_id] = {
-        "report_id": report_id,
-        "patient_id": payload.patient_id,
-        "generated_at": created_at,
-        "secure_url": f"https://example.org/reports/{report_id}",
-    }
-    REPORT_JOBS[report_id] = {
-        "status": "completed",
-        "data": {"report_id": report_id},
-        "created_at": created_at,
-    }
+    generated_by_provider_id = user.provider_id or "admin"
+    job = REPORT_SERVICE.queue_trend_report(
+        patient_id=payload.patient_id,
+        generated_by_provider_id=generated_by_provider_id,
+        period_start=payload.period_start,
+        period_end=payload.period_end,
+        summary=trend_report.summary,
+    )
+
+    _record_audit_event(
+        "report.generated",
+        actor_id=user.user_id,
+        target_id=str(job["report_id"]),
+        metadata={
+            "report_id": str(job["report_id"]),
+            "patient_id": payload.patient_id,
+            "generated_by_provider_id": generated_by_provider_id,
+        },
+    )
 
     return {
-        "report_id": report_id,
-        "status": "pending",
-        "created_at": created_at,
-        "job_id": report_id,
+        "report_id": str(job["report_id"]),
+        "status": str(job["status"]),
+        "created_at": str(job["created_at"]),
+        "job_id": str(job["report_id"]),
     }
 
 
@@ -1337,7 +1380,19 @@ def get_report_job_status(
         UserRecord, Depends(require_roles("Patient", "Provider", "Admin"))
     ],
 ) -> dict[str, object]:
-    job = REPORT_JOBS.get(report_id)
+    job = REPORT_SERVICE.get_job(report_id)
+
+    if job is not None and str(job.get("status")) in {"pending", "processing"}:
+        job = REPORT_SERVICE.complete_job(report_id)
+
+    if job is None:
+        report_metadata = REPORT_SERVICE.get_report_metadata(report_id)
+        if report_metadata is not None:
+            return {
+                "status": "completed",
+                "data": {"report_id": report_id},
+            }
+
     if job is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Report job not found"
@@ -1351,37 +1406,175 @@ def get_report_job_status(
 @router.get("/reports/{report_id}")
 def get_report_metadata(
     report_id: str,
-    _user: Annotated[
-        UserRecord, Depends(require_roles("Patient", "Provider", "Admin"))
-    ],
+    user: Annotated[UserRecord, Depends(require_roles("Patient", "Provider", "Admin"))],
 ) -> dict[str, str]:
-    report = REPORT_METADATA.get(report_id)
+    report = REPORT_SERVICE.get_report_metadata(report_id)
     if report is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Report not found"
         )
-    return report
+
+    if not _user_can_access_report(report, user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    secure_access = REPORT_SERVICE.issue_secure_access(
+        report_id=report_id,
+        viewer_user_id=user.user_id,
+    )
+    payload = dict(report)
+    payload["secure_url"] = (
+        f"/v1/reports/{report_id}/content?access_token={secure_access['access_token']}"
+    )
+    payload["expires_at"] = secure_access["expires_at"]
+    return payload
+
+
+@router.get("/reports/{report_id}/content", response_class=Response)
+def get_report_content(
+    report_id: str,
+    access_token: Annotated[str, Query(min_length=10)],
+    user: Annotated[UserRecord, Depends(require_roles("Patient", "Provider", "Admin"))],
+) -> Response:
+    report = REPORT_SERVICE.get_report_metadata(report_id)
+    if report is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Report not found"
+        )
+
+    if not _user_can_access_report(report, user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    is_valid = REPORT_SERVICE.consume_secure_access(
+        report_id=report_id,
+        access_token=access_token,
+        viewer_user_id=user.user_id,
+    )
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired report access token",
+        )
+
+    _record_audit_event(
+        "report.accessed",
+        actor_id=user.user_id,
+        target_id=report_id,
+        metadata={"report_id": report_id},
+    )
+    _record_audit_event(
+        "report.downloaded",
+        actor_id=user.user_id,
+        target_id=report_id,
+        metadata={"report_id": report_id},
+    )
+
+    return Response(
+        content=(
+            b"%PDF-1.4\n"
+            b"1 0 obj\n"
+            b"<< /Type /Catalog >>\n"
+            b"endobj\n"
+            b"%% Report scaffold content\n"
+        ),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"inline; filename={report_id}.pdf",
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post("/provider/quick-share")
 def quick_share_report(
     payload: QuickShareRequest,
-    _user: Annotated[UserRecord, Depends(require_roles("Provider", "Admin"))],
+    user: Annotated[UserRecord, Depends(require_roles("Provider", "Admin"))],
 ) -> dict[str, str]:
-    if payload.report_id not in REPORT_METADATA:
+    report_metadata = REPORT_SERVICE.get_report_metadata(payload.report_id)
+    if report_metadata is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Report not found"
         )
+
+    if report_metadata.get("patient_id") != payload.patient_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Report patient_id does not match payload patient_id",
+        )
+
+    if user.role == "Provider" and user.provider_id != payload.from_provider_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    share_id = f"share-{uuid4()}"
+    secure_message_payload = {
+        "message_id": share_id,
+        "patient_id": payload.patient_id,
+        "sender_provider_id": payload.from_provider_id,
+        "recipient_provider_id": payload.to_provider_id,
+        "report_id": payload.report_id,
+        "message_body": payload.message or "Progress report shared for review.",
+        "created_at": _utc_now().isoformat(),
+        "delivered_at": _utc_now().isoformat(),
+    }
+    SECURE_MESSAGE_PAYLOADS.append(secure_message_payload)
+
+    NOTIFICATION_DISPATCHER.send(
+        channel="in_app",
+        recipient_id=payload.to_provider_id,
+        subject="New secure report share",
+        body=secure_message_payload["message_body"],
+        metadata={
+            "share_id": share_id,
+            "report_id": payload.report_id,
+            "patient_id": payload.patient_id,
+            "from_provider_id": payload.from_provider_id,
+        },
+    )
+
+    _record_audit_event(
+        "report.shared",
+        actor_id=user.user_id,
+        target_id=payload.report_id,
+        metadata={
+            "share_id": share_id,
+            "from_provider_id": payload.from_provider_id,
+            "to_provider_id": payload.to_provider_id,
+            "patient_id": payload.patient_id,
+        },
+    )
 
     message = ALERT_SERVICE.quick_share_progress_report(
         patient_id=payload.patient_id,
         provider_id=payload.to_provider_id,
     )
     return {
-        "share_id": f"share-{uuid4()}",
+        "share_id": share_id,
         "status": "pending",
         "created_at": _utc_now().isoformat(),
         "message": message,
+    }
+
+
+@router.get("/provider/quick-share/inbox")
+def list_quick_share_inbox(
+    user: Annotated[UserRecord, Depends(require_roles("Provider", "Admin"))],
+) -> dict[str, object]:
+    if user.role == "Admin":
+        shares = list(SECURE_MESSAGE_PAYLOADS)
+    else:
+        shares = [
+            message
+            for message in SECURE_MESSAGE_PAYLOADS
+            if message.get("recipient_provider_id") == user.provider_id
+        ]
+
+    return {
+        "shares": shares,
+        "total": len(shares),
+        "page": 1,
+        "page_size": len(shares),
     }
 
 

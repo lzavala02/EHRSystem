@@ -67,6 +67,7 @@ from .models import (
 from .models import (
     Trigger as Trigger,
 )
+from .reports import InMemoryReportService as InMemoryReportService
 from .symptoms import SymptomLoggingService as SymptomLoggingService
 from .sync import (
     CrossSystemSyncService as CrossSystemSyncService,

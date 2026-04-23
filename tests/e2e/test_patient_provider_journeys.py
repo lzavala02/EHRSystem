@@ -125,7 +125,7 @@ def test_e2e_provider_logs_symptom_report_and_quick_shares() -> None:
             "period_end": datetime(2026, 4, 30, tzinfo=UTC).isoformat(),
         },
     )
-    assert create_report_response.status_code == 200
+    assert create_report_response.status_code == 202
     report_id = create_report_response.json()["report_id"]
 
     # Step 3: Provider checks report status and metadata before sharing.
@@ -143,6 +143,10 @@ def test_e2e_provider_logs_symptom_report_and_quick_shares() -> None:
     )
     assert report_metadata_response.status_code == 200
     assert report_metadata_response.json()["report_id"] == report_id
+    assert report_metadata_response.json()["secure_url"].startswith(
+        f"/v1/reports/{report_id}/content?access_token="
+    )
+    assert report_metadata_response.json().get("expires_at")
 
     # Step 4: Provider sends a quick-share to another provider.
     # This validates downstream collaboration behavior from completed reports.

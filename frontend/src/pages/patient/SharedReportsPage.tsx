@@ -8,6 +8,7 @@ export function SharedReportsPage() {
   const [reportId, setReportId] = useState('');
   const [report, setReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [openingSecureReport, setOpeningSecureReport] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -32,6 +33,34 @@ export function SharedReportsPage() {
       setError(err instanceof Error ? err.message : 'Unable to load report.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const openSecureReport = async () => {
+    if (!report?.secure_url) {
+      setError('Secure report link is unavailable. Reload the report metadata.');
+      return;
+    }
+
+    setOpeningSecureReport(true);
+    setError(null);
+    try {
+      const apiClient = getApiClient();
+      const response = await apiClient.get<Blob>(report.secure_url, {
+        responseType: 'blob',
+        headers: {
+          Accept: 'application/pdf'
+        }
+      });
+
+      const blobUrl = URL.createObjectURL(response.data);
+      window.open(blobUrl, '_blank', 'noopener,noreferrer');
+      // Release object URL after browser has had time to resolve it.
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to open secure report.');
+    } finally {
+      setOpeningSecureReport(false);
     }
   };
 
@@ -83,14 +112,16 @@ export function SharedReportsPage() {
               <span className="font-medium">Expires At (UTC):</span> {formatUtcTimestamp(report.expires_at)}
             </p>
           )}
-          <a
-            href={report.secure_url}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex mt-2 px-4 py-2 bg-health-info text-white rounded-lg hover:opacity-90"
+          <button
+            type="button"
+            onClick={() => {
+              void openSecureReport();
+            }}
+            disabled={openingSecureReport}
+            className="inline-flex mt-2 px-4 py-2 bg-health-info text-white rounded-lg hover:opacity-90 disabled:opacity-50"
           >
-            Open Secure Report
-          </a>
+            {openingSecureReport ? 'Opening secure report...' : 'Open Secure Report'}
+          </button>
         </section>
       )}
     </div>

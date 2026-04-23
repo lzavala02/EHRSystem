@@ -138,7 +138,7 @@ def test_integration_symptom_logging_to_report_to_quick_share() -> None:
             "period_end": datetime(2026, 4, 30, tzinfo=UTC).isoformat(),
         },
     )
-    assert report_response.status_code == 200
+    assert report_response.status_code == 202
     report_id = report_response.json()["report_id"]
 
     # Step 3: Provider checks report status and then quick-shares the report.
@@ -149,6 +149,19 @@ def test_integration_symptom_logging_to_report_to_quick_share() -> None:
     )
     assert status_response.status_code == 200
     assert status_response.json()["status"] == "completed"
+
+    metadata_response = client.get(
+        f"/v1/reports/{report_id}",
+        headers=provider_headers,
+    )
+    assert metadata_response.status_code == 200
+    secure_url = metadata_response.json()["secure_url"]
+    assert secure_url.startswith(f"/v1/reports/{report_id}/content?access_token=")
+    assert metadata_response.json().get("expires_at")
+
+    content_response = client.get(secure_url, headers=provider_headers)
+    assert content_response.status_code == 200
+    assert content_response.headers["content-type"].startswith("application/pdf")
 
     quick_share_response = client.post(
         "/v1/provider/quick-share",
@@ -163,6 +176,15 @@ def test_integration_symptom_logging_to_report_to_quick_share() -> None:
     )
     assert quick_share_response.status_code == 200
     assert quick_share_response.json()["status"] == "pending"
+    assert any(
+        share.get("report_id") == report_id for share in api.SECURE_MESSAGE_PAYLOADS
+    )
+
+    admin_token = _login_and_get_token(client, email="admin@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    inbox_response = client.get("/v1/provider/quick-share/inbox", headers=admin_headers)
+    assert inbox_response.status_code == 200
+    assert inbox_response.json()["total"] >= 1
 
     # Step 4: Confirm symptom list endpoint now exposes the newly logged entry.
     # This validates that write-path updates are visible through the read-path API.

@@ -81,7 +81,7 @@ def test_provider_can_use_report_and_quick_share_routes() -> None:
             "period_end": "2026-04-18T00:00:00Z",
         },
     )
-    assert trend_response.status_code == 200
+    assert trend_response.status_code == 202
     report_id = trend_response.json()["report_id"]
 
     status_response = client.get(f"/v1/reports/{report_id}/status", headers=headers)
@@ -102,6 +102,49 @@ def test_provider_can_use_report_and_quick_share_routes() -> None:
 
     assert quick_share_response.status_code == 200
     assert quick_share_response.json()["status"] == "pending"
+
+
+def test_report_secure_content_token_is_user_bound_and_one_time_use() -> None:
+    """Secure report links should be tokenized, user-bound, and single-use."""
+
+    client = TestClient(api.app)
+    provider_token = _login_and_get_token(client, email="provider@example.com")
+    provider_headers = {"Authorization": f"Bearer {provider_token}"}
+
+    trend_response = client.post(
+        "/v1/symptoms/reports/trend",
+        headers=provider_headers,
+        json={
+            "patient_id": "pat-1",
+            "period_start": "2026-04-01T00:00:00Z",
+            "period_end": "2026-04-18T00:00:00Z",
+        },
+    )
+    assert trend_response.status_code == 202
+    report_id = trend_response.json()["report_id"]
+
+    status_response = client.get(
+        f"/v1/reports/{report_id}/status", headers=provider_headers
+    )
+    assert status_response.status_code == 200
+
+    metadata_response = client.get(f"/v1/reports/{report_id}", headers=provider_headers)
+    assert metadata_response.status_code == 200
+    secure_url = metadata_response.json()["secure_url"]
+    assert secure_url.startswith(f"/v1/reports/{report_id}/content?access_token=")
+    assert metadata_response.json().get("expires_at")
+
+    admin_token = _login_and_get_token(client, email="admin@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    mismatched_user_response = client.get(secure_url, headers=admin_headers)
+    assert mismatched_user_response.status_code == 401
+
+    content_response = client.get(secure_url, headers=provider_headers)
+    assert content_response.status_code == 200
+    assert content_response.headers["content-type"].startswith("application/pdf")
+
+    second_use_response = client.get(secure_url, headers=provider_headers)
+    assert second_use_response.status_code == 401
 
 
 def test_patient_cannot_create_consent_request() -> None:

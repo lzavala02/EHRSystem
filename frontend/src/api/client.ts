@@ -54,7 +54,14 @@ export function initializeApiClient(getAuthToken: () => string | null): AxiosIns
 
       // Log HIPAA audit trail for sensitive API calls
       if (import.meta.env.VITE_HIPAA_AUDIT_ENABLED === 'true') {
-        const sensitivePatterns = ['/v1/consent', '/v1/symptoms', '/v1/dashboard', '/v1/alerts'];
+        const sensitivePatterns = [
+          '/v1/consent',
+          '/v1/symptoms',
+          '/v1/dashboard',
+          '/v1/alerts',
+          '/v1/reports',
+          '/v1/provider/quick-share'
+        ];
         const isSensitive = sensitivePatterns.some(pattern => config.url?.includes(pattern));
         if (isSensitive) {
           console.log(`[HIPAA_AUDIT] ${config.method?.toUpperCase()} ${config.url}`);
