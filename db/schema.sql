@@ -76,9 +76,9 @@ CREATE TABLE sync_metadata (
 CREATE TABLE symptom_logs (
     log_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     patient_id UUID NOT NULL REFERENCES patients(patient_id) ON DELETE CASCADE,
-    symptom_description TEXT NOT NULL, -- e.g., 'Redness', 'Scales'
-    severity_scale INT CHECK (severity_scale BETWEEN 1 AND 10),
-    log_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    symptom_description TEXT NOT NULL CHECK (char_length(btrim(symptom_description)) BETWEEN 10 AND 500),
+    severity_scale INT NOT NULL CHECK (severity_scale BETWEEN 1 AND 10),
+    log_date TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Triggers (Stress, Scented Products, etc.)

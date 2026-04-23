@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg import connect
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from redis import Redis
 
 from .alerts import ProviderAlertService
@@ -149,9 +149,9 @@ class ConsentCreateRequest(BaseModel):
 
 class SymptomLogCreateRequest(BaseModel):
     patient_id: str
-    symptom_description: str
-    severity_scale: int
-    trigger_ids: list[str]
+    symptom_description: str = Field(min_length=10, max_length=500)
+    severity_scale: int = Field(ge=1, le=10)
+    trigger_ids: list[str] = Field(min_length=1)
     otc_treatments: list[str]
 
 

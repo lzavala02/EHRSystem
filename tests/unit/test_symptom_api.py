@@ -57,6 +57,58 @@ def test_create_symptom_log_rejects_non_psoriasis_description() -> None:
     assert "psoriasis-oriented symptoms" in response.json()["detail"]
 
 
+def test_create_symptom_log_rejects_short_description_at_request_boundary() -> None:
+    """Request validation should enforce the symptom description length floor."""
+
+    client = TestClient(api.app)
+    token = _login_and_get_token(client, email="patient@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    trigger_id = _first_trigger_id(client, headers)
+
+    response = client.post(
+        "/v1/symptoms/logs",
+        headers=headers,
+        json={
+            "patient_id": "pat-1",
+            "symptom_description": "Too short",
+            "severity_scale": 5,
+            "trigger_ids": [trigger_id],
+            "otc_treatments": ["Hydrocortisone cream"],
+        },
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(
+        isinstance(item, dict) and item["loc"][-1] == "symptom_description"
+        for item in detail
+    )
+
+
+def test_create_symptom_log_rejects_empty_trigger_selection_at_request_boundary() -> None:
+    """Request validation should require at least one trigger selection."""
+
+    client = TestClient(api.app)
+    token = _login_and_get_token(client, email="patient@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.post(
+        "/v1/symptoms/logs",
+        headers=headers,
+        json={
+            "patient_id": "pat-1",
+            "symptom_description": "Psoriasis plaque flare with itching and redness",
+            "severity_scale": 5,
+            "trigger_ids": [],
+            "otc_treatments": ["Hydrocortisone cream"],
+        },
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(isinstance(item, dict) and item["loc"][-1] == "trigger_ids" for item in detail)
+
+
 def test_create_symptom_log_requires_otc_treatment_for_high_severity() -> None:
     """High-severity entries should require at least one OTC treatment value."""
 
