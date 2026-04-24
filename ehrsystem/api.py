@@ -21,10 +21,12 @@ from pydantic import BaseModel, Field
 from redis import Redis
 
 from .alerts import ProviderAlertService
+from .audit_logging import AuditEventType, log_audit_event
 from .config import load_settings
 from .consent import ConsentWorkflowService
 from .contracts import ensure_list_item_required_keys, ensure_required_keys
 from .dashboard import UnifiedChronicDiseaseDashboardService
+from .encryption_validator import EncryptionValidator, validate_encryption_on_startup
 from .events import InMemoryAuditEventStore, InMemoryNotificationDispatcher
 from .fixtures import PSORIASIS_TRIGGER_CHECKLIST
 from .logging_config import setup_logging
@@ -62,6 +64,9 @@ setup_logging(
 
 logger = logging.getLogger(__name__)
 logger.info(f"Starting {settings.app_name} in {settings.app_env} environment")
+
+# Validate encryption configuration at startup
+validate_encryption_on_startup()
 
 app = FastAPI(title=settings.app_name)
 app.add_middleware(
@@ -1810,6 +1815,108 @@ def list_alerts(
         "page": 1,
         "page_size": len(ALERT_PAYLOADS),
     }
+
+
+# === Day 9 Admin Endpoints for Audit and Encryption ===
+
+
+@router.get("/admin/audit-logs")
+def get_audit_logs(
+    event_type: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    user: Annotated[UserRecord, Depends(require_roles("Admin"))] = None,
+) -> dict[str, object]:
+    """Retrieve audit logs for compliance and investigation.
+    
+    Admin access only. Returns audit events optionally filtered by event type.
+    """
+    all_events = AUDIT_EVENT_STORE.list_events(event_type=event_type)
+    # Return most recent events first
+    events = all_events[-limit:] if len(all_events) > limit else all_events
+    events.reverse()
+    
+    log_audit_event(
+        AuditEventType.AUDIT_EVENT_TYPE if hasattr(AuditEventType, "AUDIT_EVENT_TYPE") else "audit.logs.retrieved",
+        actor_id=user.user_id if user else None,
+        target_id="system",
+        metadata={"event_type_filter": event_type or "none", "limit": str(limit)},
+    )
+    
+    return {
+        "audit_logs": [
+            {
+                "event_id": event.event_id,
+                "event_type": event.event_type,
+                "occurred_at": event.occurred_at.isoformat(),
+                "actor_id": event.actor_id,
+                "target_id": event.target_id,
+                "metadata": event.metadata,
+            }
+            for event in events
+        ],
+        "total": len(all_events),
+        "returned": len(events),
+        "event_type_filter": event_type,
+    }
+
+
+@router.get("/admin/encryption-status")
+def get_encryption_status(
+    user: Annotated[UserRecord, Depends(require_roles("Admin"))],
+) -> dict[str, object]:
+    """Get encryption configuration validation status.
+    
+    Admin access only. Returns validation results for encryption across all components.
+    """
+    validation_results = EncryptionValidator.validate_all()
+    
+    log_audit_event(
+        AuditEventType.ENCRYPTION_CONFIG_VALIDATED,
+        actor_id=user.user_id,
+        target_id="system",
+        metadata={"validation_performed": "true"},
+    )
+    
+    return {
+        "validated_at": datetime.now(UTC).isoformat(),
+        "environment": os.getenv("APP_ENV", "development"),
+        "components": {
+            component: {
+                "status": result.status,
+                "in_transit_tls": result.in_transit_tls,
+                "at_rest_encryption": result.at_rest_encryption,
+                "notes": result.notes,
+            }
+            for component, result in validation_results.items()
+        },
+        "deployment_ready": all(
+            r.status != "non-compliant" for r in validation_results.values()
+        ),
+    }
+
+
+@router.get("/admin/encryption-report")
+def get_encryption_report(
+    user: Annotated[UserRecord, Depends(require_roles("Admin"))],
+) -> Response:
+    """Get detailed encryption validation report in text format.
+    
+    Admin access only. Returns complete validation report with deployment checklist.
+    """
+    report = EncryptionValidator.generate_validation_report()
+    
+    log_audit_event(
+        AuditEventType.ENCRYPTION_CONFIG_VALIDATED,
+        actor_id=user.user_id,
+        target_id="system",
+        metadata={"report_generated": "true"},
+    )
+    
+    return Response(
+        content=report,
+        media_type="text/plain",
+        headers={"Content-Disposition": "attachment; filename=encryption-validation-report.txt"},
+    )
 
 
 app.include_router(router, prefix="/v1")
