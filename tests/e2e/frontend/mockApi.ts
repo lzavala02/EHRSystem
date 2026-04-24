@@ -161,6 +161,24 @@ export async function mockProviderWorkflowFlow(page: Page) {
     });
   });
 
+  await page.route('**/v1/provider/patients/*/quick-share-prefill', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        patient_id: 'pat-2',
+        provider_id: 'prov-pcp',
+        fields: {
+          to_provider_id: 'prov-derm',
+          message: 'Please review before next visit.',
+          period_start: '2026-04-01T00:00:00+00:00',
+          period_end: '2026-04-30T00:00:00+00:00'
+        },
+        source_timestamp_utc: '2026-04-11T10:00:00.000Z'
+      })
+    });
+  });
+
   await page.route('**/v1/symptoms/reports/trend', async (route) => {
     await route.fulfill({
       status: 200,
@@ -181,6 +199,27 @@ export async function mockProviderWorkflowFlow(page: Page) {
       body: JSON.stringify({
         status: 'completed',
         data: { report_id: 'rep-1' }
+      })
+    });
+  });
+
+  await page.route('**/v1/reports/rep-1', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        report_id: 'rep-1',
+        patient_id: 'pat-2',
+        generated_by_provider_id: 'prov-pcp',
+        generated_at: ISO_NOW,
+        secure_url: '/v1/reports/rep-1/content?access_token=test-token',
+        summary: 'Trend report generated from 1 symptom log(s), but severity trend is not yet measurable.',
+        period_start: '2026-04-01T00:00:00+00:00',
+        period_end: '2026-04-30T00:00:00+00:00',
+        symptom_count: 1,
+        trigger_names: ['Stress'],
+        treatment_names: ['Hydrocortisone cream'],
+        expires_at: '2026-04-21T12:10:00.000Z'
       })
     });
   });

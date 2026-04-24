@@ -2,7 +2,29 @@
 
 Use these steps to access the project frontend locally.
 
-## Local Startup
+## Backend Startup (Required)
+
+Start the backend API first so frontend login and data requests do not fail through the Vite proxy.
+
+1. Open a terminal in the repository root.
+
+```bash
+cd .
+```
+
+2. Start the API using the project-local virtual environment.
+
+```bash
+./.venv/Scripts/python.exe -m uvicorn ehrsystem.api:app --host 127.0.0.1 --port 8000
+```
+
+3. Confirm backend health in a separate terminal.
+
+```bash
+curl http://127.0.0.1:8000/health/live
+```
+
+## Frontend Startup
 
 1. Open a terminal in the repository and change into the frontend folder.
 
@@ -23,6 +45,8 @@ npm run dev
 ```
 
 4. Open the app in a browser at `http://localhost:5173`.
+
+5. Keep both backend and frontend terminals running while testing navigation and interactions.
 
 ## Backend Connection
 

@@ -29,7 +29,7 @@ test('provider can search patients, select one, generate a report, and quick-sha
   // This checks that the shared selection context survives route changes in the browser.
   await page.getByRole('button', { name: 'Quick-Share' }).click();
   await expect(page).toHaveURL(/\/provider\/quick-share/);
-  await expect(page.getByRole('heading', { name: 'Quick-Share', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Quick-Share/i })).toBeVisible();
   await expect(page.getByLabel('Patient')).toHaveValue('pat-2');
 
   // Step 5: Generate a trend report and wait for the mocked job to complete.
@@ -37,12 +37,12 @@ test('provider can search patients, select one, generate a report, and quick-sha
   await page.getByRole('button', { name: 'Generate Report' }).click();
   await expect(page.getByText('Report generation started. Waiting for completion...')).toBeVisible();
   await expect(page.getByText('Trend report generated and ready to share.')).toBeVisible();
-  await expect(page.getByText('Current report ID: rep-1')).toBeVisible();
+  await expect(page.getByText('Report ID: rep-1')).toBeVisible();
 
   // Step 6: Fill the share form and send the report to another provider.
   // This verifies the final collaboration action in the provider browser journey.
   await page.getByLabel('Destination Provider ID').fill('prov-derm');
-  await page.getByLabel('Optional Message').fill('Please review before next visit.');
-  await page.getByRole('button', { name: 'Send Quick-Share' }).click();
-  await expect(page.getByText('Quick-share sent successfully.')).toBeVisible();
+  await page.getByLabel('Message (Optional)').fill('Please review before next visit.');
+  await page.getByRole('button', { name: /Send Quick-Share/i }).click();
+  await expect(page.getByText(/Quick-share sent successfully/i)).toBeVisible();
 });

@@ -78,7 +78,7 @@ Updated and extended in [tests/unit/test_symptom_api.py](tests/unit/test_symptom
 Executed command:
 
 ```powershell
-& "c:/Users/golds/AppData/Local/pypoetry/Cache/VIRTUALENVS/EHRSYSTEM-SJLOMSEE-PY3.14/Scripts/python.exe" -m pytest tests/unit/test_symptom_api.py -q
+./.venv/Scripts/python.exe -m pytest tests/unit/test_symptom_api.py -q
 ```
 
 Result:
@@ -91,7 +91,7 @@ Result:
 Executed command:
 
 ```powershell
-& "c:/Users/golds/AppData/Local/pypoetry/Cache/VIRTUALENVS/EHRSYSTEM-SJLOMSEE-PY3.14/Scripts/python.exe" -m pytest tests/unit -q
+./.venv/Scripts/python.exe -m pytest tests/unit -q
 ```
 
 Result:
