@@ -546,13 +546,20 @@ for patient in PATIENTS:
     )
 
 REPORT_JOBS: dict[str, dict[str, object]] = {}
-REPORT_METADATA: dict[str, dict[str, str]] = {
+REPORT_METADATA: dict[str, dict[str, object]] = {
     "rep-1": {
         "report_id": "rep-1",
         "patient_id": "pat-1",
         "generated_by_provider_id": "prov-pcp",
         "generated_at": datetime(2026, 4, 12, 10, 0, tzinfo=UTC).isoformat(),
         "secure_url": "",
+        "summary": "Symptom severity is stable across the selected period.",
+        "period_start": datetime(2026, 4, 1, tzinfo=UTC).isoformat(),
+        "period_end": datetime(2026, 4, 12, tzinfo=UTC).isoformat(),
+        "symptom_count": 0,
+        "trigger_names": [],
+        "treatment_names": [],
+        "symptoms": [],
     }
 }
 REPORT_ACCESS_TOKENS: dict[str, dict[str, str]] = {}
@@ -634,7 +641,7 @@ def require_roles(
 
 
 def _user_can_access_report(
-    report_metadata: dict[str, str],
+    report_metadata: dict[str, object],
     user: UserRecord,
 ) -> bool:
     if user.role == "Admin":
@@ -1414,11 +1421,8 @@ def create_trend_report(
     )
 
     job = REPORT_SERVICE.queue_trend_report(
-        patient_id=payload.patient_id,
         generated_by_provider_id=generated_by_provider_id,
-        period_start=payload.period_start,
-        period_end=payload.period_end,
-        summary=trend_report.summary,
+        report=trend_report,
     )
 
     _record_audit_event(
@@ -1479,7 +1483,7 @@ def get_report_job_status(
 def get_report_metadata(
     report_id: str,
     user: Annotated[UserRecord, Depends(require_roles("Patient", "Provider", "Admin"))],
-) -> dict[str, str]:
+) -> dict[str, object]:
     report = REPORT_SERVICE.get_report_metadata(report_id)
     if report is None:
         raise HTTPException(
@@ -1541,13 +1545,7 @@ def get_report_content(
     )
 
     return Response(
-        content=(
-            b"%PDF-1.4\n"
-            b"1 0 obj\n"
-            b"<< /Type /Catalog >>\n"
-            b"endobj\n"
-            b"%% Report scaffold content\n"
-        ),
+        content=REPORT_SERVICE.render_report_pdf(report_id),
         media_type="application/pdf",
         headers={
             "Content-Disposition": f"inline; filename={report_id}.pdf",

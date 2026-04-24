@@ -275,13 +275,23 @@ export interface TrendReportResponse {
   status: 'pending' | 'processing' | 'completed' | 'failed';
   created_at: string;
   job_id: string;
+  threshold_alerts_created: string[];
+  should_quick_share: boolean;
+  threshold_analyses: Array<Record<string, unknown>>;
 }
 
 export interface ReportData {
   report_id: string;
   patient_id: string;
+  generated_by_provider_id: string;
   generated_at: string;
   secure_url: string;
+  summary: string;
+  period_start: string;
+  period_end: string;
+  symptom_count: number;
+  trigger_names: string[];
+  treatment_names: string[];
   expires_at?: string;
 }
 

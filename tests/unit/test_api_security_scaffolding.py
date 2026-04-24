@@ -161,6 +161,7 @@ def test_report_secure_content_token_is_user_bound_and_one_time_use() -> None:
     content_response = client.get(secure_url, headers=provider_headers)
     assert content_response.status_code == 200
     assert content_response.headers["content-type"].startswith("application/pdf")
+    assert b"Symptom Trend Report" in content_response.content
 
     second_use_response = client.get(secure_url, headers=provider_headers)
     assert second_use_response.status_code == 401

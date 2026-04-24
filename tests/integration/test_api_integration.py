@@ -155,6 +155,11 @@ def test_integration_symptom_logging_to_report_to_quick_share() -> None:
         headers=provider_headers,
     )
     assert metadata_response.status_code == 200
+    metadata_payload = metadata_response.json()
+    assert metadata_payload["summary"]
+    assert metadata_payload["period_start"] == "2026-04-01T00:00:00+00:00"
+    assert metadata_payload["period_end"] == "2026-04-30T00:00:00+00:00"
+    assert metadata_payload["symptom_count"] >= 1
     secure_url = metadata_response.json()["secure_url"]
     assert secure_url.startswith(f"/v1/reports/{report_id}/content?access_token=")
     assert metadata_response.json().get("expires_at")
@@ -162,6 +167,9 @@ def test_integration_symptom_logging_to_report_to_quick_share() -> None:
     content_response = client.get(secure_url, headers=provider_headers)
     assert content_response.status_code == 200
     assert content_response.headers["content-type"].startswith("application/pdf")
+    assert b"Symptom Trend Report" in content_response.content
+    assert b"Summary:" in content_response.content
+    assert b"Symptom Timeline:" in content_response.content
 
     quick_share_response = client.post(
         "/v1/provider/quick-share",
@@ -192,6 +200,8 @@ def test_integration_symptom_logging_to_report_to_quick_share() -> None:
         prefill_payload["fields"]["message"]
         == "Please review trend before dermatology follow-up."
     )
+    assert prefill_payload["fields"]["period_start"] == "2026-04-01T00:00:00+00:00"
+    assert prefill_payload["fields"]["period_end"] == "2026-04-30T00:00:00+00:00"
     assert prefill_payload["source_timestamp_utc"] is not None
 
     admin_token = _login_and_get_token(client, email="admin@example.com")
