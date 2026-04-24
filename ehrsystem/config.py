@@ -46,6 +46,16 @@ class Settings:
     log_file: str = "ehrsystem.log"
     log_max_bytes: int = 10 * 1024 * 1024  # 10 MB
     log_backup_count: int = 3
+    # Negative trend thresholds for symptom monitoring
+    negative_trend_severity_increase: int = (
+        2  # Severity increase threshold (0-10 scale)
+    )
+    negative_trend_consecutive_high: int = (
+        3  # Consecutive high-severity logs to trigger alert (severity >= 7)
+    )
+    negative_trend_percentage_increase: float = (
+        0.25  # 25% increase in high-severity logs to trigger alert
+    )
 
 
 def load_settings() -> Settings:
@@ -71,4 +81,13 @@ def load_settings() -> Settings:
         log_file=os.getenv("LOG_FILE", "ehrsystem.log"),
         log_max_bytes=int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024))),
         log_backup_count=int(os.getenv("LOG_BACKUP_COUNT", "3")),
+        negative_trend_severity_increase=int(
+            os.getenv("NEGATIVE_TREND_SEVERITY_INCREASE", "2")
+        ),
+        negative_trend_consecutive_high=int(
+            os.getenv("NEGATIVE_TREND_CONSECUTIVE_HIGH", "3")
+        ),
+        negative_trend_percentage_increase=float(
+            os.getenv("NEGATIVE_TREND_PERCENTAGE_INCREASE", "0.25")
+        ),
     )

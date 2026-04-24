@@ -169,6 +169,161 @@ class SymptomLoggingService:
         for treatment in treatments:
             self._treatment_catalog[treatment.treatment_id] = deepcopy(treatment)
 
+    def detect_negative_trend_severity_increase(
+        self,
+        patient_id: str,
+        period_start: datetime,
+        period_end: datetime,
+        severity_increase_threshold: int = 2,
+    ) -> dict[str, object]:
+        """Detect negative trend based on severity increase from baseline.
+
+        Returns a dict with:
+        - detected: bool indicating if threshold was exceeded
+        - baseline_severity: int (first recorded severity)
+        - current_severity: int (most recent severity)
+        - increase: int (difference between current and baseline)
+        - threshold: int (configured threshold)
+        """
+        logs_in_range = [
+            deepcopy(log)
+            for log in self._symptom_logs_by_patient.get(patient_id, [])
+            if period_start <= (log.log_date or period_start) <= period_end
+        ]
+        logs_in_range.sort(key=lambda log: log.log_date or period_start)
+
+        severity_values = [
+            log.severity_scale
+            for log in logs_in_range
+            if log.severity_scale is not None
+        ]
+
+        if len(severity_values) < 2:
+            return {
+                "detected": False,
+                "reason": "insufficient_data",
+                "baseline_severity": severity_values[0] if severity_values else None,
+                "current_severity": severity_values[-1] if severity_values else None,
+                "increase": 0,
+                "threshold": severity_increase_threshold,
+            }
+
+        baseline = severity_values[0]
+        current = severity_values[-1]
+        increase = current - baseline
+        detected = increase >= severity_increase_threshold
+
+        return {
+            "detected": detected,
+            "baseline_severity": baseline,
+            "current_severity": current,
+            "increase": increase,
+            "threshold": severity_increase_threshold,
+        }
+
+    def detect_consecutive_high_severity(
+        self,
+        patient_id: str,
+        period_start: datetime,
+        period_end: datetime,
+        consecutive_high_threshold: int = 3,
+        high_severity_min: int = 7,
+    ) -> dict[str, object]:
+        """Detect negative trend based on consecutive high-severity logs.
+
+        Returns a dict with:
+        - detected: bool indicating if threshold was exceeded
+        - consecutive_high_count: int (consecutive entries >= high_severity_min)
+        - total_logs: int (total entries in period)
+        - threshold: int (configured threshold)
+        """
+        logs_in_range = [
+            deepcopy(log)
+            for log in self._symptom_logs_by_patient.get(patient_id, [])
+            if period_start <= (log.log_date or period_start) <= period_end
+        ]
+        logs_in_range.sort(key=lambda log: log.log_date or period_start)
+
+        if not logs_in_range:
+            return {
+                "detected": False,
+                "consecutive_high_count": 0,
+                "total_logs": 0,
+                "threshold": consecutive_high_threshold,
+            }
+
+        consecutive_high_count = 0
+        max_consecutive = 0
+
+        for log in logs_in_range:
+            if (
+                log.severity_scale is not None
+                and log.severity_scale >= high_severity_min
+            ):
+                consecutive_high_count += 1
+                max_consecutive = max(max_consecutive, consecutive_high_count)
+            else:
+                consecutive_high_count = 0
+
+        detected = max_consecutive >= consecutive_high_threshold
+
+        return {
+            "detected": detected,
+            "consecutive_high_count": max_consecutive,
+            "total_logs": len(logs_in_range),
+            "threshold": consecutive_high_threshold,
+        }
+
+    def detect_high_severity_percentage(
+        self,
+        patient_id: str,
+        period_start: datetime,
+        period_end: datetime,
+        percentage_threshold: float = 0.25,
+        high_severity_min: int = 7,
+    ) -> dict[str, object]:
+        """Detect negative trend based on percentage of high-severity logs.
+
+        Returns a dict with:
+        - detected: bool indicating if threshold was exceeded
+        - high_severity_count: int (entries >= high_severity_min)
+        - high_severity_percentage: float (0.0-1.0)
+        - total_logs: int
+        - threshold: float (configured threshold as 0.0-1.0)
+        """
+        logs_in_range = [
+            deepcopy(log)
+            for log in self._symptom_logs_by_patient.get(patient_id, [])
+            if period_start <= (log.log_date or period_start) <= period_end
+        ]
+        logs_in_range.sort(key=lambda log: log.log_date or period_start)
+
+        if not logs_in_range:
+            return {
+                "detected": False,
+                "high_severity_count": 0,
+                "high_severity_percentage": 0.0,
+                "total_logs": 0,
+                "threshold": percentage_threshold,
+            }
+
+        high_severity_count = sum(
+            1
+            for log in logs_in_range
+            if log.severity_scale is not None
+            and log.severity_scale >= high_severity_min
+        )
+        high_severity_percentage = high_severity_count / len(logs_in_range)
+        detected = high_severity_percentage >= percentage_threshold
+
+        return {
+            "detected": detected,
+            "high_severity_count": high_severity_count,
+            "high_severity_percentage": round(high_severity_percentage, 3),
+            "total_logs": len(logs_in_range),
+            "threshold": percentage_threshold,
+        }
+
     def generate_trend_report(
         self,
         patient_id: str,

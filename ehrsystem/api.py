@@ -1341,7 +1341,7 @@ def list_symptom_logs(
 def create_trend_report(
     payload: TrendReportRequest,
     user: Annotated[UserRecord, Depends(require_roles("Provider", "Admin"))],
-) -> dict[str, str]:
+) -> dict[str, object]:
     if user.role == "Provider" and user.provider_id is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Provider profile required"
@@ -1355,12 +1355,60 @@ def create_trend_report(
 
     generated_by_provider_id = user.provider_id or "admin"
 
+    # Analyze negative trends based on configurable thresholds
+    threshold_analyses: list[dict[str, object]] = []
+
+    # Check severity increase threshold
+    severity_increase_analysis = (
+        SYMPTOM_SERVICE.detect_negative_trend_severity_increase(
+            patient_id=payload.patient_id,
+            period_start=payload.period_start,
+            period_end=payload.period_end,
+            severity_increase_threshold=settings.negative_trend_severity_increase,
+        )
+    )
+    threshold_analyses.append(severity_increase_analysis)
+
+    # Check consecutive high severity threshold
+    consecutive_high_analysis = SYMPTOM_SERVICE.detect_consecutive_high_severity(
+        patient_id=payload.patient_id,
+        period_start=payload.period_start,
+        period_end=payload.period_end,
+        consecutive_high_threshold=settings.negative_trend_consecutive_high,
+    )
+    threshold_analyses.append(consecutive_high_analysis)
+
+    # Check high severity percentage threshold
+    percentage_analysis = SYMPTOM_SERVICE.detect_high_severity_percentage(
+        patient_id=payload.patient_id,
+        period_start=payload.period_start,
+        period_end=payload.period_end,
+        percentage_threshold=settings.negative_trend_percentage_increase,
+    )
+    threshold_analyses.append(percentage_analysis)
+
+    # Create alerts for any exceeded thresholds
+    alerts_created: list[str] = []
+    for analysis in threshold_analyses:
+        alert = ALERT_SERVICE.evaluate_negative_trend_threshold(
+            patient_id=payload.patient_id,
+            provider_id=generated_by_provider_id,
+            trend_analysis=analysis,
+        )
+        if alert:
+            alerts_created.append(alert.alert_id)
+
+    # Determine if quick-share to PCP is needed
+    should_quick_share = ALERT_SERVICE.should_quick_share_to_pcp(threshold_analyses)
+
     ALERT_SERVICE.record_visit_fields(
         patient_id=payload.patient_id,
         provider_id=generated_by_provider_id,
         fields={
             "period_start": payload.period_start.isoformat(),
             "period_end": payload.period_end.isoformat(),
+            "threshold_alerts_created": len(alerts_created),
+            "should_quick_share": should_quick_share,
         },
         visited_at=_utc_now(),
     )
@@ -1381,6 +1429,8 @@ def create_trend_report(
             "report_id": str(job["report_id"]),
             "patient_id": payload.patient_id,
             "generated_by_provider_id": generated_by_provider_id,
+            "threshold_alerts_created": str(alerts_created),
+            "should_quick_share": str(should_quick_share),
         },
     )
 
@@ -1389,6 +1439,9 @@ def create_trend_report(
         "status": str(job["status"]),
         "created_at": str(job["created_at"]),
         "job_id": str(job["report_id"]),
+        "threshold_alerts_created": alerts_created,
+        "should_quick_share": should_quick_share,
+        "threshold_analyses": threshold_analyses,
     }
 
 
@@ -1659,6 +1712,93 @@ def list_provider_patients(
         "total": len(PATIENTS),
         "page": 1,
         "page_size": len(PATIENTS),
+    }
+
+
+@router.get("/admin/threshold-config")
+def get_threshold_configuration(
+    user: Annotated[UserRecord, Depends(require_roles("Admin"))],
+) -> dict[str, object]:
+    """Get current negative-trend threshold configuration."""
+    return {
+        "negative_trend_severity_increase": settings.negative_trend_severity_increase,
+        "negative_trend_consecutive_high": settings.negative_trend_consecutive_high,
+        "negative_trend_percentage_increase": settings.negative_trend_percentage_increase,
+        "description": {
+            "negative_trend_severity_increase": "Severity increase threshold (0-10 scale)",
+            "negative_trend_consecutive_high": "Consecutive high-severity logs to trigger alert",
+            "negative_trend_percentage_increase": "Percentage of high-severity logs (0.0-1.0)",
+        },
+    }
+
+
+@router.post("/admin/threshold-config")
+def update_threshold_configuration(
+    payload: dict[str, float | int],
+    user: Annotated[UserRecord, Depends(require_roles("Admin"))],
+) -> dict[str, object]:
+    """Update negative-trend threshold configuration (Admin only).
+
+    Expected payload keys:
+    - negative_trend_severity_increase: int (1-10)
+    - negative_trend_consecutive_high: int (1-20)
+    - negative_trend_percentage_increase: float (0.0-1.0)
+    """
+    # Validate and update settings
+    if "negative_trend_severity_increase" in payload:
+        value = int(payload["negative_trend_severity_increase"])
+        if not 1 <= value <= 10:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="negative_trend_severity_increase must be between 1 and 10",
+            )
+        settings.negative_trend_severity_increase = value
+
+    if "negative_trend_consecutive_high" in payload:
+        value = int(payload["negative_trend_consecutive_high"])
+        if not 1 <= value <= 20:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="negative_trend_consecutive_high must be between 1 and 20",
+            )
+        settings.negative_trend_consecutive_high = value
+
+    if "negative_trend_percentage_increase" in payload:
+        float_value = float(payload["negative_trend_percentage_increase"])
+        if not 0.0 <= float_value <= 1.0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="negative_trend_percentage_increase must be between 0.0 and 1.0",
+            )
+        settings.negative_trend_percentage_increase = float_value
+
+    _record_audit_event(
+        "threshold_config.updated",
+        actor_id=user.user_id,
+        target_id="system",
+        metadata={
+            "new_config": str(
+                {
+                    "negative_trend_severity_increase": settings.negative_trend_severity_increase,
+                    "negative_trend_consecutive_high": settings.negative_trend_consecutive_high,
+                    "negative_trend_percentage_increase": settings.negative_trend_percentage_increase,
+                }
+            ),
+        },
+    )
+
+    return {
+        "status": "success",
+        "message": "Threshold configuration updated",
+        "negative_trend_severity_increase": str(
+            settings.negative_trend_severity_increase
+        ),
+        "negative_trend_consecutive_high": str(
+            settings.negative_trend_consecutive_high
+        ),
+        "negative_trend_percentage_increase": str(
+            settings.negative_trend_percentage_increase
+        ),
     }
 
 

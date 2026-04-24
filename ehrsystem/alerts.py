@@ -106,3 +106,69 @@ class ProviderAlertService:
         message = f"Progress report shared with provider {provider_id} for patient {patient_id}."
         self._shared_progress_reports.append(message)
         return message
+
+    def evaluate_negative_trend_threshold(
+        self,
+        patient_id: str,
+        provider_id: str,
+        trend_analysis: dict[str, object],
+    ) -> Alert | None:
+        """Create a negative trend alert if threshold analysis shows concern.
+
+        Args:
+            patient_id: Patient identifier
+            provider_id: Provider identifier
+            trend_analysis: Result from threshold detection methods
+
+        Returns:
+            Alert if threshold exceeded, None otherwise
+        """
+        if not trend_analysis.get("detected"):
+            return None
+
+        # Construct description based on threshold type
+        if "increase" in trend_analysis:
+            # Severity increase threshold
+            baseline = trend_analysis.get("baseline_severity", "unknown")
+            current = trend_analysis.get("current_severity", "unknown")
+            increase = trend_analysis.get("increase", 0)
+            threshold = trend_analysis.get("threshold", 0)
+            description = (
+                f"Negative trend alert: Symptom severity increased by {increase} points "
+                f"(from {baseline} to {current}), exceeding threshold of {threshold}."
+            )
+        elif "consecutive_high_count" in trend_analysis:
+            # Consecutive high severity threshold
+            consecutive = trend_analysis.get("consecutive_high_count", 0)
+            threshold = trend_analysis.get("threshold", 0)
+            description = (
+                f"Negative trend alert: {consecutive} consecutive high-severity entries recorded, "
+                f"exceeding threshold of {threshold}."
+            )
+        elif "high_severity_percentage" in trend_analysis:
+            # High severity percentage threshold
+            percentage = float(trend_analysis.get("high_severity_percentage", 0.0))  # type: ignore[arg-type]
+            percentage_pct = round(percentage * 100, 1)
+            threshold_pct = round(float(trend_analysis.get("threshold", 0.0)) * 100, 1)  # type: ignore[arg-type]
+            description = (
+                f"Negative trend alert: {percentage_pct}% of symptom entries are high-severity, "
+                f"exceeding threshold of {threshold_pct}%."
+            )
+        else:
+            description = "Negative trend detected based on symptom analysis."
+
+        return self.create_negative_trend_alert(
+            patient_id=patient_id,
+            provider_id=provider_id,
+            description=description,
+        )
+
+    def should_quick_share_to_pcp(
+        self,
+        trend_analysis_results: list[dict[str, object]],
+    ) -> bool:
+        """Determine if any threshold analysis suggests quick-sharing to PCP.
+
+        Returns True if any threshold was exceeded, indicating urgent attention needed.
+        """
+        return any(result.get("detected", False) for result in trend_analysis_results)
