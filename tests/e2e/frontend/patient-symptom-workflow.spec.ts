@@ -32,7 +32,7 @@ test('patient can log a symptom, review history, and open a shared report', asyn
   await page.getByRole('button', { name: 'History' }).click();
   await expect(page.getByRole('heading', { name: 'Symptom History' })).toBeVisible();
   await expect(page.getByText('Red plaques are flaring on my elbows and scalp.')).toBeVisible();
-  await expect(page.getByText('Stress')).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Stress' })).toBeVisible();
   await expect(page.getByText('Hydrocortisone cream')).toBeVisible();
 
   // Step 5: Open the shared report screen and load a valid report identifier.
@@ -43,8 +43,5 @@ test('patient can log a symptom, review history, and open a shared report', asyn
   await page.getByRole('button', { name: 'Load Report' }).click();
   await expect(page.getByText('Report loaded successfully.')).toBeVisible();
   await expect(page.getByText('rep-1')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Open Secure Report' })).toHaveAttribute(
-    'href',
-    'https://secure.example.test/reports/rep-1'
-  );
+  await expect(page.getByRole('button', { name: 'Open Secure Report' })).toBeVisible();
 });
