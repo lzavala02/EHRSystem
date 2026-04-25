@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "test": "jest --config jest.config.cjs",
     "test:watch": "jest --watch",
-    "test:e2e": "playwright test --config playwright.config.ts"
+    "test:e2e": "..\\node_modules\\.bin\\playwright test --config ..\\playwright.frontend.config.ts"
   },
   "dependencies": {
     "axios": "^1.6.0",

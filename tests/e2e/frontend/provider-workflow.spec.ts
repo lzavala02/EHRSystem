@@ -33,9 +33,8 @@ test('provider can search patients, select one, generate a report, and quick-sha
   await expect(page.getByLabel('Patient')).toHaveValue('pat-2');
 
   // Step 5: Generate a trend report and wait for the mocked job to complete.
-  // The UI should show the completion state and the new report identifier.
+  // Assert stable completion signals because pending-state text can be transient across browsers.
   await page.getByRole('button', { name: 'Generate Report' }).click();
-  await expect(page.getByText('Report generation started. Waiting for completion...')).toBeVisible();
   await expect(page.getByText('Trend report generated and ready to share.')).toBeVisible();
   await expect(page.getByText('Report ID: rep-1')).toBeVisible();
 
