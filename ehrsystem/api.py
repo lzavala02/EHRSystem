@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal, TypedDict
@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import sentry_sdk
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -82,6 +82,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 security = HTTPBearer(auto_error=False)
+
+
+def _apply_security_headers(response: Response) -> Response:
+    """Attach baseline browser hardening headers to every response."""
+
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    )
+
+    if settings.app_env == "production":
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        )
+
+    return response
+
+
+@app.middleware("http")
+async def security_headers_middleware(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """Ensure browser security headers are present on API and SPA responses."""
+
+    response = await call_next(request)
+    return _apply_security_headers(response)
+
 
 # Serve frontend static files if build exists
 frontend_dist_path = os.path.join(
@@ -1822,26 +1853,26 @@ def list_alerts(
 
 @router.get("/admin/audit-logs")
 def get_audit_logs(
+    user: Annotated[UserRecord, Depends(require_roles("Admin"))],
     event_type: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
-    user: Annotated[UserRecord, Depends(require_roles("Admin"))] = None,
 ) -> dict[str, object]:
     """Retrieve audit logs for compliance and investigation.
-    
+
     Admin access only. Returns audit events optionally filtered by event type.
     """
     all_events = AUDIT_EVENT_STORE.list_events(event_type=event_type)
     # Return most recent events first
     events = all_events[-limit:] if len(all_events) > limit else all_events
     events.reverse()
-    
+
     log_audit_event(
-        AuditEventType.AUDIT_EVENT_TYPE if hasattr(AuditEventType, "AUDIT_EVENT_TYPE") else "audit.logs.retrieved",
-        actor_id=user.user_id if user else None,
+        "audit.logs.retrieved",
+        actor_id=user.user_id,
         target_id="system",
         metadata={"event_type_filter": event_type or "none", "limit": str(limit)},
     )
-    
+
     return {
         "audit_logs": [
             {
@@ -1865,18 +1896,18 @@ def get_encryption_status(
     user: Annotated[UserRecord, Depends(require_roles("Admin"))],
 ) -> dict[str, object]:
     """Get encryption configuration validation status.
-    
+
     Admin access only. Returns validation results for encryption across all components.
     """
     validation_results = EncryptionValidator.validate_all()
-    
+
     log_audit_event(
         AuditEventType.ENCRYPTION_CONFIG_VALIDATED,
         actor_id=user.user_id,
         target_id="system",
         metadata={"validation_performed": "true"},
     )
-    
+
     return {
         "validated_at": datetime.now(UTC).isoformat(),
         "environment": os.getenv("APP_ENV", "development"),
@@ -1900,22 +1931,24 @@ def get_encryption_report(
     user: Annotated[UserRecord, Depends(require_roles("Admin"))],
 ) -> Response:
     """Get detailed encryption validation report in text format.
-    
+
     Admin access only. Returns complete validation report with deployment checklist.
     """
     report = EncryptionValidator.generate_validation_report()
-    
+
     log_audit_event(
         AuditEventType.ENCRYPTION_CONFIG_VALIDATED,
         actor_id=user.user_id,
         target_id="system",
         metadata={"report_generated": "true"},
     )
-    
+
     return Response(
         content=report,
         media_type="text/plain",
-        headers={"Content-Disposition": "attachment; filename=encryption-validation-report.txt"},
+        headers={
+            "Content-Disposition": "attachment; filename=encryption-validation-report.txt"
+        },
     )
 
 

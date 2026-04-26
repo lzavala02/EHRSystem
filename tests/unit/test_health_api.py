@@ -18,6 +18,35 @@ def test_root_endpoint_serves_frontend() -> None:
     assert response.headers["content-type"].startswith("text/html")
 
 
+def test_root_endpoint_sets_browser_hardening_headers() -> None:
+    """SPA responses should include baseline browser security headers."""
+
+    client = TestClient(api.app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+
+
+def test_root_endpoint_sets_hsts_in_production(monkeypatch) -> None:
+    """Production responses should advertise HSTS for browser HTTPS pinning."""
+
+    monkeypatch.setattr(api.settings, "app_env", "production")
+    client = TestClient(api.app, base_url="https://testserver")
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert (
+        response.headers["strict-transport-security"]
+        == "max-age=31536000; includeSubDomains"
+    )
+
+
 def test_liveness_endpoint_reports_service_up() -> None:
     """Liveness should return an always-on service status."""
 
