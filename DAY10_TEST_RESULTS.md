@@ -11,7 +11,10 @@ Unit Tests:        ✓ 62 passed in 2.35s
 Integration Tests: ✓ 2 passed in 0.23s
 E2E Tests:         ✓ 2 passed in 0.20s
 ─────────────────────────────────────
-TOTAL:             ✓ 66 tests passed
+TOTAL:             ✓ 68 backend tests passed
+
+Frontend Jest:     ✓ 29 passed in 5.27s
+Playwright E2E:    ✓ 12 passed in 37.9s
 
 Status: ALL TESTS PASSING ✓
 ═══════════════════════════════════════════════════════════════
@@ -134,6 +137,7 @@ Status: ALL TESTS PASSING ✓
 **Completed frontend evidence:**
 ```powershell
 cd frontend
+npm test -- --runInBand
 npm run test:e2e
 npm run build
 npm run preview -- --host 127.0.0.1 --port 4173 --strictPort
@@ -154,7 +158,7 @@ Verified in browser against the live production URL `https://ehrsystem-1gtp.onre
 Remediation completed in code:
 - Added FastAPI response middleware to emit `Strict-Transport-Security` in production and baseline browser hardening headers on all responses
 - Added unit coverage for SPA/browser hardening headers and production HSTS behavior
-- Local validation passed: `64 passed` in the backend unit suite
+- Local validation passed: `68 passed` across backend unit, integration, and Python e2e suites; `29 passed` in frontend Jest; `12 passed` in Playwright
 
 **Remaining manual verification:**
 ```powershell
@@ -177,9 +181,10 @@ curl.exe -I https://<confirmed-production-url>/
 ## Engineer B Sign-Off Checklist
 
 ### Part 1: Backend Acceptance Complete
-- [x] Unit tests: 62 passed
+- [x] Unit tests: 64 passed
 - [x] Integration tests: 2 passed
 - [x] E2E tests: 2 passed
+- [x] Backend total: 68 passed
 - [x] Story 1 (Sync): PASS
 - [x] Story 2 (Dashboard): PASS
 - [x] Story 3 (Symptoms): PASS
@@ -187,6 +192,7 @@ curl.exe -I https://<confirmed-production-url>/
 - [x] Story 5 (Efficiency): PASS
 
 ### Part 2: Frontend Regression Testing
+- [x] Frontend Jest tests: PASS (29/29)
 - [x] Playwright tests (if available): PASS (12/12 cross-browser)
 - [ ] Manual smoke test: Optional (not required because e2e suite passed)
 
@@ -233,7 +239,7 @@ Latest production re-check:
 - Monitoring runbook exists in [docs/deployment_render_uptimerobot.md](docs/deployment_render_uptimerobot.md)
 - Production site is reachable
 - Admin login/navigation works in production
-- Security-header fix is implemented in code and validated locally (`64 passed`)
+- Security-header fix is implemented in code and validated locally (`68 backend tests`, `29 frontend Jest tests`, `12 Playwright tests`)
 
 **Still required for Engineer A approval:**
 1. Redeploy production with the security-header middleware fix
