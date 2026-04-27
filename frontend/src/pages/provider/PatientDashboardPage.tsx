@@ -124,14 +124,6 @@ export function ProviderPatientDashboardPage() {
         </button>
       </div>
 
-      <section className="rounded-lg border border-clinical-200 bg-clinical-50 p-4">
-        <p className="text-sm font-semibold text-clinical-900">Morning integration slice</p>
-        <p className="mt-1 text-sm text-clinical-700">
-          This view is wired for two external sources, consolidated provider history, missing-data prompts,
-          and UTC sync timestamps so midday integration can validate the live payload contract.
-        </p>
-      </section>
-
       <section className="bg-white rounded-lg shadow p-6">
         <label htmlFor="provider-dashboard-patient" className="block text-sm font-medium text-clinical-700 mb-2">
           Selected patient

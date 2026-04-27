@@ -128,7 +128,6 @@ describe('ProviderPatientDashboardPage', () => {
     render(<ProviderPatientDashboardPage />);
 
     expect(screen.getByText('Patient Dashboard (Provider View)')).toBeInTheDocument();
-    expect(screen.getByText('Morning integration slice')).toBeInTheDocument();
     expect(screen.getByText('Source ID: sys-epic')).toBeInTheDocument();
     expect(screen.getByText('Source ID: sys-nextgen')).toBeInTheDocument();
     expect(screen.getByText('Dr. Ada Provider')).toBeInTheDocument();
