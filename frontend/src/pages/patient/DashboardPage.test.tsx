@@ -3,9 +3,14 @@ import { PatientDashboardPage } from './DashboardPage';
 
 const mockUseFetch = jest.fn();
 const mockUseAuth = jest.fn();
+const mockGetApiClient = jest.fn();
 
 jest.mock('../../hooks/useFetch', () => ({
   useFetch: (...args: unknown[]) => mockUseFetch(...args)
+}));
+
+jest.mock('../../api/client', () => ({
+  getApiClient: (...args: unknown[]) => mockGetApiClient(...args)
 }));
 
 jest.mock('../../context/AuthContext', () => ({
@@ -15,6 +20,7 @@ jest.mock('../../context/AuthContext', () => ({
 describe('PatientDashboardPage', () => {
   beforeEach(() => {
     mockUseFetch.mockReset();
+    mockGetApiClient.mockReset();
     mockUseAuth.mockReset();
   });
 
@@ -81,9 +87,10 @@ describe('PatientDashboardPage', () => {
     render(<PatientDashboardPage />);
 
     expect(screen.getByText('Patient read-only view')).toBeInTheDocument();
+    expect(screen.getByText('Manage Your Health Data')).toBeInTheDocument();
     expect(screen.getByText(/Provider-only actions are hidden here\./i)).toBeInTheDocument();
     expect(screen.getByText('My Health Dashboard')).toBeInTheDocument();
-    expect(screen.getByText('Epic')).toBeInTheDocument();
+    expect(screen.getAllByText('Epic').length).toBeGreaterThan(0);
     expect(screen.getByText('Dr. Ada Provider')).toBeInTheDocument();
   });
 });

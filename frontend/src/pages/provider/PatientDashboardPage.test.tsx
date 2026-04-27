@@ -3,13 +3,23 @@ import { ProviderPatientDashboardPage } from './PatientDashboardPage';
 
 const mockUseFetch = jest.fn();
 const mockUseSelectedPatient = jest.fn();
+const mockUseAuth = jest.fn();
+const mockGetApiClient = jest.fn();
 
 jest.mock('../../hooks/useFetch', () => ({
   useFetch: (...args: unknown[]) => mockUseFetch(...args)
 }));
 
+jest.mock('../../api/client', () => ({
+  getApiClient: (...args: unknown[]) => mockGetApiClient(...args)
+}));
+
 jest.mock('../../context/SelectedPatientContext', () => ({
   useSelectedPatient: () => mockUseSelectedPatient()
+}));
+
+jest.mock('../../context/AuthContext', () => ({
+  useAuth: () => mockUseAuth()
 }));
 
 describe('ProviderPatientDashboardPage', () => {
@@ -23,8 +33,22 @@ describe('ProviderPatientDashboardPage', () => {
 
   beforeEach(() => {
     mockUseFetch.mockReset();
+    mockGetApiClient.mockReset();
     mockUseSelectedPatient.mockReset();
+    mockUseAuth.mockReset();
     jest.setSystemTime(new Date('2026-04-13T12:00:00Z'));
+
+    mockUseAuth.mockReturnValue({
+      user: {
+        user_id: 'user-provider-1',
+        role: 'Provider',
+        email: 'provider@example.com',
+        name: 'Dr. Ada Provider',
+        provider_id: 'prov-pcp',
+        session_token: 'token-1',
+        expires_at: '2026-04-20T12:00:00Z'
+      }
+    });
   });
 
   it('renders provider dashboard data for selected patient', () => {
@@ -136,6 +160,9 @@ describe('ProviderPatientDashboardPage', () => {
     expect(screen.getByText('Patient Health Profile')).toBeInTheDocument();
     expect(screen.getByText('Topical corticosteroid')).toBeInTheDocument();
     expect(screen.getByText(/Epic\s*-\s*Medications/)).toBeInTheDocument();
+    expect(screen.getByText('Provider Actions')).toBeInTheDocument();
+    expect(screen.getByText('Assign Yourself to Patient')).toBeInTheDocument();
+    expect(screen.getByText('Edit Patient Health Profile')).toBeInTheDocument();
   });
 
   it('shows unified error alert when dashboard fetch fails', () => {

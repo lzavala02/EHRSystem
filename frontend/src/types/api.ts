@@ -164,6 +164,48 @@ export interface DashboardSyncStatus {
   sync_status: SyncStatus[];
 }
 
+export interface ProviderListUpdateRequest {
+  provider_ids: string[];
+}
+
+export interface ProviderListUpdateResponse {
+  patient_id: string;
+  providers: Provider[];
+  updated_at: string;
+}
+
+export interface SourceSystemConnectRequest {
+  system_name: 'Epic' | 'NextGen';
+}
+
+export interface SourceSystemConnectResponse {
+  patient_id: string;
+  system_id: string;
+  system_name: string;
+  status: 'connected' | 'already_connected';
+  connected_systems: DashboardSourceSystem[];
+}
+
+export interface MedicalRecordUploadRequest {
+  category: string;
+  value_description: string;
+  source_system: 'Epic' | 'NextGen' | 'Internal';
+  recorded_at?: string;
+}
+
+export interface MedicalHistoryUpdateRequest {
+  category?: string;
+  value_description?: string;
+  recorded_at?: string;
+}
+
+export interface HealthProfileUpdateRequest {
+  height?: number;
+  weight?: number;
+  family_history?: string;
+  vaccination_record?: string;
+}
+
 // Symptom Types
 
 export interface Trigger {

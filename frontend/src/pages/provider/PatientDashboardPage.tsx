@@ -1,14 +1,20 @@
-import { useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { getApiClient } from '../../api/client';
 import { ErrorAlert } from '../../components/Alerts';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
+import { useAuth } from '../../context/AuthContext';
 import { useSelectedPatient } from '../../context/SelectedPatientContext';
 import { useFetch } from '../../hooks/useFetch';
 import { useSyncAlertObservability } from '../../hooks/useSyncAlertObservability';
 import {
   DashboardSnapshot,
   DashboardSyncStatus,
+  HealthProfileUpdateRequest,
+  MedicalHistoryUpdateRequest,
+  MedicalRecordUploadRequest,
   PatientListItem,
-  PatientListResponse
+  PatientListResponse,
+  SourceSystemConnectRequest
 } from '../../types/api';
 import { formatUtcTimestamp, getRelativeTime, isStale } from '../../utils/date';
 
@@ -53,7 +59,22 @@ function normalizePatients(payload: PatientListItem[] | PatientListResponse | nu
 }
 
 export function ProviderPatientDashboardPage() {
+  const { user } = useAuth();
   const { selectedPatientId, setSelectedPatientId } = useSelectedPatient();
+  const [connectSystem, setConnectSystem] = useState<'Epic' | 'NextGen'>('Epic');
+  const [uploadCategory, setUploadCategory] = useState('');
+  const [uploadDescription, setUploadDescription] = useState('');
+  const [uploadSourceSystem, setUploadSourceSystem] = useState<'Epic' | 'NextGen' | 'Internal'>('Internal');
+  const [editingRecordId, setEditingRecordId] = useState('');
+  const [editRecordCategory, setEditRecordCategory] = useState('');
+  const [editRecordDescription, setEditRecordDescription] = useState('');
+  const [profileHeight, setProfileHeight] = useState('');
+  const [profileWeight, setProfileWeight] = useState('');
+  const [profileFamilyHistory, setProfileFamilyHistory] = useState('');
+  const [profileVaccination, setProfileVaccination] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const {
     data: patientsData,
@@ -101,12 +122,142 @@ export function ProviderPatientDashboardPage() {
     syncError
   });
 
+  useEffect(() => {
+    if (!dashboard) return;
+    setProfileHeight(dashboard.patient_profile.height === null ? '' : String(dashboard.patient_profile.height));
+    setProfileWeight(dashboard.patient_profile.weight === null ? '' : String(dashboard.patient_profile.weight));
+    setProfileFamilyHistory(dashboard.patient_profile.family_history ?? '');
+    setProfileVaccination(dashboard.patient_profile.vaccination_record ?? '');
+    if (!editingRecordId && dashboard.medical_history.length > 0) {
+      setEditingRecordId(dashboard.medical_history[0].record_id);
+    }
+  }, [dashboard, editingRecordId]);
+
   if (patientsLoading || dashboardLoading || syncLoading) {
     return <LoadingSpinner message="Loading provider dashboard..." />;
   }
 
   const retryAll = async () => {
     await Promise.all([refetchPatients(), refetchDashboard(), refetchSync()]);
+  };
+
+  const runAction = async (action: () => Promise<void>, successMessage: string) => {
+    setActionLoading(true);
+    setActionError(null);
+    setActionMessage(null);
+    try {
+      await action();
+      await retryAll();
+      setActionMessage(successMessage);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Request failed');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const onAssignSelf = async () => {
+    if (!patientId) {
+      setActionError('Select a patient first.');
+      return;
+    }
+
+    await runAction(async () => {
+      const apiClient = getApiClient();
+      const providerId = user?.provider_id;
+      if (providerId) {
+        await apiClient.post(
+          `/v1/provider/patients/${patientId}/assign-self?provider_id=${encodeURIComponent(providerId)}`
+        );
+      } else {
+        await apiClient.post(`/v1/provider/patients/${patientId}/assign-self`);
+      }
+    }, 'You are now assigned to this patient.');
+  };
+
+  const onConnectSourceSystem = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!patientId) {
+      setActionError('Select a patient first.');
+      return;
+    }
+
+    await runAction(async () => {
+      const apiClient = getApiClient();
+      const payload: SourceSystemConnectRequest = { system_name: connectSystem };
+      await apiClient.post(`/v1/patients/${patientId}/source-systems/connect`, payload);
+    }, `${connectSystem} connected for this patient.`);
+  };
+
+  const onUploadMedicalRecord = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!patientId) {
+      setActionError('Select a patient first.');
+      return;
+    }
+    if (!uploadCategory.trim() || !uploadDescription.trim()) {
+      setActionError('Category and description are required for upload.');
+      return;
+    }
+
+    await runAction(async () => {
+      const apiClient = getApiClient();
+      const payload: MedicalRecordUploadRequest = {
+        category: uploadCategory.trim(),
+        value_description: uploadDescription.trim(),
+        source_system: uploadSourceSystem
+      };
+      await apiClient.post(`/v1/patients/${patientId}/medical-records/upload`, payload);
+      setUploadCategory('');
+      setUploadDescription('');
+      setUploadSourceSystem('Internal');
+    }, 'Medical record uploaded.');
+  };
+
+  const onEditMedicalHistory = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!patientId || !editingRecordId) {
+      setActionError('Select a medical record first.');
+      return;
+    }
+    if (!editRecordCategory.trim() && !editRecordDescription.trim()) {
+      setActionError('Enter at least one medical history field to update.');
+      return;
+    }
+
+    await runAction(async () => {
+      const apiClient = getApiClient();
+      const payload: MedicalHistoryUpdateRequest = {};
+      if (editRecordCategory.trim()) payload.category = editRecordCategory.trim();
+      if (editRecordDescription.trim()) payload.value_description = editRecordDescription.trim();
+      await apiClient.patch(`/v1/patients/${patientId}/medical-history/${editingRecordId}`, payload);
+      setEditRecordCategory('');
+      setEditRecordDescription('');
+    }, 'Medical history updated.');
+  };
+
+  const onEditHealthProfile = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!patientId) {
+      setActionError('Select a patient first.');
+      return;
+    }
+
+    const payload: HealthProfileUpdateRequest = {};
+    if (profileHeight.trim()) payload.height = Number(profileHeight);
+    if (profileWeight.trim()) payload.weight = Number(profileWeight);
+    if (profileFamilyHistory.trim()) payload.family_history = profileFamilyHistory.trim();
+    if (profileVaccination.trim()) payload.vaccination_record = profileVaccination.trim();
+
+    if (Object.keys(payload).length === 0) {
+      setActionError('Enter at least one profile field to update.');
+      return;
+    }
+
+    await runAction(async () => {
+      const apiClient = getApiClient();
+      await apiClient.patch(`/v1/patients/${patientId}/health-profile`, payload);
+    }, 'Patient health profile updated.');
   };
 
   return (
@@ -156,6 +307,17 @@ export function ProviderPatientDashboardPage() {
               : 'Unable to load provider dashboard')
           }
         />
+      )}
+
+      {(actionError || actionMessage) && (
+        <section className="space-y-2">
+          {actionError && <ErrorAlert message={actionError} />}
+          {actionMessage && (
+            <div className="rounded-lg border border-health-success bg-health-success/10 p-3 text-sm text-clinical-900">
+              {actionMessage}
+            </div>
+          )}
+        </section>
       )}
 
       {!patientId && (
@@ -263,6 +425,187 @@ export function ProviderPatientDashboardPage() {
                 <p className="font-medium text-clinical-900">{dashboard.patient_profile.family_history ?? 'Missing'}</p>
               </div>
             </div>
+          </section>
+
+          <section className="bg-white rounded-lg shadow p-6 space-y-6">
+            <h2 className="text-xl font-semibold text-clinical-900">Provider Actions</h2>
+
+            <div className="border border-clinical-200 rounded-lg p-4">
+              <h3 className="text-lg font-medium text-clinical-900">Assign Yourself to Patient</h3>
+              <p className="text-sm text-clinical-600 mt-1 mb-3">
+                Add yourself to this patient care team for ongoing coordination.
+              </p>
+              <button
+                type="button"
+                onClick={() => { void onAssignSelf(); }}
+                disabled={actionLoading || !patientId}
+                className="px-4 py-2 text-sm bg-clinical-700 text-white rounded hover:bg-clinical-800 disabled:opacity-60"
+              >
+                Assign Self
+              </button>
+            </div>
+
+            <form onSubmit={(event) => { void onEditHealthProfile(event); }} className="space-y-3 border border-clinical-200 rounded-lg p-4">
+              <h3 className="text-lg font-medium text-clinical-900">Edit Patient Health Profile</h3>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="text-sm text-clinical-700">
+                  Height (cm)
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={profileHeight}
+                    onChange={(event) => setProfileHeight(event.target.value)}
+                    className="mt-1 w-full border border-clinical-300 rounded px-3 py-2"
+                  />
+                </label>
+                <label className="text-sm text-clinical-700">
+                  Weight (kg)
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={profileWeight}
+                    onChange={(event) => setProfileWeight(event.target.value)}
+                    className="mt-1 w-full border border-clinical-300 rounded px-3 py-2"
+                  />
+                </label>
+                <label className="text-sm text-clinical-700">
+                  Family history
+                  <input
+                    type="text"
+                    value={profileFamilyHistory}
+                    onChange={(event) => setProfileFamilyHistory(event.target.value)}
+                    className="mt-1 w-full border border-clinical-300 rounded px-3 py-2"
+                  />
+                </label>
+                <label className="text-sm text-clinical-700">
+                  Vaccination record
+                  <input
+                    type="text"
+                    value={profileVaccination}
+                    onChange={(event) => setProfileVaccination(event.target.value)}
+                    className="mt-1 w-full border border-clinical-300 rounded px-3 py-2"
+                  />
+                </label>
+              </div>
+              <button
+                type="submit"
+                disabled={actionLoading || !patientId}
+                className="px-4 py-2 text-sm bg-clinical-700 text-white rounded hover:bg-clinical-800 disabled:opacity-60"
+              >
+                Save Patient Profile
+              </button>
+            </form>
+
+            <form onSubmit={(event) => { void onConnectSourceSystem(event); }} className="space-y-3 border border-clinical-200 rounded-lg p-4">
+              <h3 className="text-lg font-medium text-clinical-900">Connect Source System</h3>
+              <label className="block text-sm text-clinical-700">
+                Source system
+                <select
+                  value={connectSystem}
+                  onChange={(event) => setConnectSystem(event.target.value as 'Epic' | 'NextGen')}
+                  className="mt-1 w-full border border-clinical-300 rounded px-3 py-2"
+                >
+                  <option value="Epic">Epic</option>
+                  <option value="NextGen">NextGen</option>
+                </select>
+              </label>
+              <button
+                type="submit"
+                disabled={actionLoading || !patientId}
+                className="px-4 py-2 text-sm bg-clinical-700 text-white rounded hover:bg-clinical-800 disabled:opacity-60"
+              >
+                Connect Source
+              </button>
+            </form>
+
+            <form onSubmit={(event) => { void onUploadMedicalRecord(event); }} className="space-y-3 border border-clinical-200 rounded-lg p-4">
+              <h3 className="text-lg font-medium text-clinical-900">Upload Medical Record</h3>
+              <div className="grid gap-3 md:grid-cols-3">
+                <label className="text-sm text-clinical-700">
+                  Category
+                  <input
+                    type="text"
+                    value={uploadCategory}
+                    onChange={(event) => setUploadCategory(event.target.value)}
+                    className="mt-1 w-full border border-clinical-300 rounded px-3 py-2"
+                  />
+                </label>
+                <label className="text-sm text-clinical-700 md:col-span-2">
+                  Description
+                  <input
+                    type="text"
+                    value={uploadDescription}
+                    onChange={(event) => setUploadDescription(event.target.value)}
+                    className="mt-1 w-full border border-clinical-300 rounded px-3 py-2"
+                  />
+                </label>
+              </div>
+              <label className="block text-sm text-clinical-700">
+                Source
+                <select
+                  value={uploadSourceSystem}
+                  onChange={(event) => setUploadSourceSystem(event.target.value as 'Epic' | 'NextGen' | 'Internal')}
+                  className="mt-1 w-full border border-clinical-300 rounded px-3 py-2"
+                >
+                  <option value="Internal">Internal</option>
+                  <option value="Epic">Epic</option>
+                  <option value="NextGen">NextGen</option>
+                </select>
+              </label>
+              <button
+                type="submit"
+                disabled={actionLoading || !patientId}
+                className="px-4 py-2 text-sm bg-clinical-700 text-white rounded hover:bg-clinical-800 disabled:opacity-60"
+              >
+                Upload Record
+              </button>
+            </form>
+
+            <form onSubmit={(event) => { void onEditMedicalHistory(event); }} className="space-y-3 border border-clinical-200 rounded-lg p-4">
+              <h3 className="text-lg font-medium text-clinical-900">Edit Medical History</h3>
+              <label className="block text-sm text-clinical-700">
+                Record
+                <select
+                  value={editingRecordId}
+                  onChange={(event) => setEditingRecordId(event.target.value)}
+                  className="mt-1 w-full border border-clinical-300 rounded px-3 py-2"
+                >
+                  <option value="">Select record</option>
+                  {dashboard.medical_history.map((record) => (
+                    <option key={record.record_id} value={record.record_id}>
+                      {record.category} ({record.system_name})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="text-sm text-clinical-700">
+                  New category (optional)
+                  <input
+                    type="text"
+                    value={editRecordCategory}
+                    onChange={(event) => setEditRecordCategory(event.target.value)}
+                    className="mt-1 w-full border border-clinical-300 rounded px-3 py-2"
+                  />
+                </label>
+                <label className="text-sm text-clinical-700">
+                  New description (optional)
+                  <input
+                    type="text"
+                    value={editRecordDescription}
+                    onChange={(event) => setEditRecordDescription(event.target.value)}
+                    className="mt-1 w-full border border-clinical-300 rounded px-3 py-2"
+                  />
+                </label>
+              </div>
+              <button
+                type="submit"
+                disabled={actionLoading || !patientId}
+                className="px-4 py-2 text-sm bg-clinical-700 text-white rounded hover:bg-clinical-800 disabled:opacity-60"
+              >
+                Save Medical History
+              </button>
+            </form>
           </section>
 
           <section className="bg-white rounded-lg shadow p-6">

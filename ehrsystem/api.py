@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Literal, TypedDict
+from typing import Annotated, Literal, TypedDict, cast
 from uuid import uuid4
 
 import sentry_sdk
@@ -212,6 +212,34 @@ class SyncConflictResolveRequest(BaseModel):
     resolution: Literal["accept_local", "accept_remote"]
 
 
+class ProviderListUpdateRequest(BaseModel):
+    provider_ids: list[str] = Field(min_length=1)
+
+
+class SourceSystemConnectRequest(BaseModel):
+    system_name: Literal["Epic", "NextGen"]
+
+
+class MedicalRecordUploadRequest(BaseModel):
+    category: str = Field(min_length=1, max_length=120)
+    value_description: str = Field(min_length=1, max_length=2000)
+    source_system: Literal["Epic", "NextGen", "Internal"] = "Internal"
+    recorded_at: datetime | None = None
+
+
+class MedicalHistoryUpdateRequest(BaseModel):
+    category: str | None = Field(default=None, min_length=1, max_length=120)
+    value_description: str | None = Field(default=None, min_length=1, max_length=2000)
+    recorded_at: datetime | None = None
+
+
+class HealthProfileUpdateRequest(BaseModel):
+    height: float | None = None
+    weight: float | None = None
+    family_history: str | None = None
+    vaccination_record: str | None = None
+
+
 USERS_BY_ID: dict[str, UserRecord] = {
     "user-patient-1": UserRecord(
         user_id="user-patient-1",
@@ -332,6 +360,12 @@ MEDICAL_RECORDS = _build_medical_records_from_mock_sources()
 SYSTEM_NAME_BY_ID = {
     "sys-epic": "Epic",
     "sys-nextgen": "NextGen",
+    "sys-internal": "Internal",
+}
+SYSTEM_ID_BY_NAME = {
+    "Epic": "sys-epic",
+    "NextGen": "sys-nextgen",
+    "Internal": "sys-internal",
 }
 SYNC_STATUS_BY_PATIENT: dict[str, list[SyncStatusEntry]] = {}
 
@@ -437,12 +471,74 @@ def _mark_conflict_alerts_resolved(
             alert_payload["status"] = "Resolved"
 
 
-DASHBOARD_SERVICE = UnifiedChronicDiseaseDashboardService(
-    patients=PATIENTS,
-    providers=PROVIDERS,
-    medical_records=MEDICAL_RECORDS,
-    care_team_by_patient={"pat-1": ["prov-derm"], "pat-2": []},
-)
+CARE_TEAM_BY_PATIENT: dict[str, list[str]] = {
+    "pat-1": ["prov-derm"],
+    "pat-2": [],
+}
+
+PATIENT_SOURCE_CONNECTIONS: dict[str, set[str]] = {
+    patient.patient_id: set() for patient in PATIENTS
+}
+for record in MEDICAL_RECORDS:
+    if record.system_id:
+        PATIENT_SOURCE_CONNECTIONS.setdefault(record.patient_id, set()).add(
+            record.system_id
+        )
+
+
+# Initialize dashboard service - will be populated by _refresh_dashboard_service()
+DASHBOARD_SERVICE: UnifiedChronicDiseaseDashboardService
+
+
+def _refresh_dashboard_service() -> None:
+    global DASHBOARD_SERVICE
+    DASHBOARD_SERVICE = UnifiedChronicDiseaseDashboardService(
+        patients=PATIENTS,
+        providers=PROVIDERS,
+        medical_records=MEDICAL_RECORDS,
+        care_team_by_patient=cast(dict[str, Iterable[str]], CARE_TEAM_BY_PATIENT),
+    )
+
+
+def _upsert_sync_status(
+    patient_id: str,
+    category: str,
+    system_id: str,
+    last_synced_at: datetime,
+) -> None:
+    status_entries = SYNC_STATUS_BY_PATIENT.setdefault(patient_id, [])
+    for entry in status_entries:
+        if entry["category"] == category and entry["system_id"] == system_id:
+            if last_synced_at > entry["last_synced_at"]:
+                entry["last_synced_at"] = last_synced_at
+            return
+
+    status_entries.append(
+        {
+            "category": category,
+            "last_synced_at": last_synced_at,
+            "system_id": system_id,
+            "system_name": SYSTEM_NAME_BY_ID.get(system_id, "Unknown"),
+        }
+    )
+
+
+def _connected_source_systems_payload(patient_id: str) -> list[dict[str, str]]:
+    connected_ids = PATIENT_SOURCE_CONNECTIONS.get(patient_id, set())
+    connected_ids_sorted = sorted(
+        connected_ids,
+        key=lambda value: SYSTEM_NAME_BY_ID.get(value, value),
+    )
+    return [
+        {
+            "system_id": system_id,
+            "system_name": SYSTEM_NAME_BY_ID.get(system_id, "Unknown"),
+        }
+        for system_id in connected_ids_sorted
+    ]
+
+
+_refresh_dashboard_service()
 
 AUDIT_EVENT_STORE = InMemoryAuditEventStore()
 NOTIFICATION_DISPATCHER = InMemoryNotificationDispatcher()
@@ -1061,6 +1157,12 @@ def get_patient_dashboard(
                 "system_name": str(history_item["system_name"]),
             }
         )
+
+    for source_system in _connected_source_systems_payload(patient_id):
+        if source_system["system_id"] in seen_system_ids:
+            continue
+        seen_system_ids.add(source_system["system_id"])
+        source_systems.append(source_system)
 
     payload: dict[str, object] = {
         "patient_id": snapshot.patient_id,
@@ -1746,6 +1848,308 @@ def list_provider_patients(
         "total": len(PATIENTS),
         "page": 1,
         "page_size": len(PATIENTS),
+    }
+
+
+@router.put("/patients/{patient_id}/providers")
+def update_patient_provider_list(
+    patient_id: str,
+    payload: ProviderListUpdateRequest,
+    user: Annotated[UserRecord, Depends(require_roles("Patient", "Admin"))],
+) -> dict[str, object]:
+    patient = PATIENT_BY_ID.get(patient_id)
+    if patient is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found",
+        )
+
+    if user.role == "Patient" and user.patient_id != patient_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    unknown_provider_ids = [
+        provider_id
+        for provider_id in payload.provider_ids
+        if provider_id not in PROVIDER_BY_ID
+    ]
+    if unknown_provider_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Unknown provider_id values: {', '.join(unknown_provider_ids)}",
+        )
+
+    care_team_provider_ids = [
+        provider_id
+        for provider_id in payload.provider_ids
+        if provider_id != patient.primary_provider_id
+    ]
+    CARE_TEAM_BY_PATIENT[patient_id] = care_team_provider_ids
+    _refresh_dashboard_service()
+
+    return {
+        "patient_id": patient_id,
+        "providers": [
+            {
+                "provider_id": member.provider_id,
+                "provider_name": member.provider_name,
+                "specialty": member.specialty or "Unknown",
+                "clinic_affiliation": member.clinic_affiliation or "Unknown",
+            }
+            for member in DASHBOARD_SERVICE.list_care_team(patient_id)
+        ],
+        "updated_at": _utc_now().isoformat(),
+    }
+
+
+@router.post("/provider/patients/{patient_id}/assign-self")
+def assign_provider_to_patient(
+    patient_id: str,
+    user: Annotated[UserRecord, Depends(require_roles("Provider", "Admin"))],
+    provider_id: str | None = None,
+) -> dict[str, str]:
+    patient = PATIENT_BY_ID.get(patient_id)
+    if patient is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found",
+        )
+
+    effective_provider_id = user.provider_id if user.role == "Provider" else provider_id
+    if effective_provider_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="provider_id is required",
+        )
+
+    if effective_provider_id not in PROVIDER_BY_ID:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Provider not found",
+        )
+
+    assigned_status = "already_assigned"
+    if patient.primary_provider_id != effective_provider_id:
+        care_team = CARE_TEAM_BY_PATIENT.setdefault(patient_id, [])
+        if effective_provider_id not in care_team:
+            care_team.append(effective_provider_id)
+            assigned_status = "assigned"
+
+    _refresh_dashboard_service()
+    return {
+        "patient_id": patient_id,
+        "provider_id": effective_provider_id,
+        "status": assigned_status,
+    }
+
+
+@router.post("/patients/{patient_id}/source-systems/connect")
+def connect_patient_source_system(
+    patient_id: str,
+    payload: SourceSystemConnectRequest,
+    user: Annotated[UserRecord, Depends(require_roles("Patient", "Provider", "Admin"))],
+) -> dict[str, object]:
+    if patient_id not in PATIENT_BY_ID:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found",
+        )
+
+    if user.role == "Patient" and user.patient_id != patient_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    system_id = SYSTEM_ID_BY_NAME[payload.system_name]
+    patient_connections = PATIENT_SOURCE_CONNECTIONS.setdefault(patient_id, set())
+    connection_status = "connected"
+    if system_id in patient_connections:
+        connection_status = "already_connected"
+    else:
+        patient_connections.add(system_id)
+
+    _upsert_sync_status(
+        patient_id=patient_id,
+        category="Connection",
+        system_id=system_id,
+        last_synced_at=_utc_now(),
+    )
+
+    return {
+        "patient_id": patient_id,
+        "system_id": system_id,
+        "system_name": payload.system_name,
+        "status": connection_status,
+        "connected_systems": _connected_source_systems_payload(patient_id),
+    }
+
+
+@router.post(
+    "/patients/{patient_id}/medical-records/upload",
+    status_code=status.HTTP_201_CREATED,
+)
+def upload_medical_record(
+    patient_id: str,
+    payload: MedicalRecordUploadRequest,
+    user: Annotated[UserRecord, Depends(require_roles("Patient", "Provider", "Admin"))],
+) -> dict[str, object]:
+    if patient_id not in PATIENT_BY_ID:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found",
+        )
+
+    if user.role == "Patient" and user.patient_id != patient_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    source_system_id = SYSTEM_ID_BY_NAME[payload.source_system]
+    if payload.source_system != "Internal":
+        PATIENT_SOURCE_CONNECTIONS.setdefault(patient_id, set()).add(source_system_id)
+
+    recorded_at = payload.recorded_at or _utc_now()
+    stored_system_id = source_system_id if payload.source_system != "Internal" else None
+    record = MedicalRecordItem(
+        record_id=f"rec-{uuid4()}",
+        patient_id=patient_id,
+        system_id=stored_system_id,
+        category=payload.category.strip(),
+        value_description=payload.value_description.strip(),
+        recorded_at=recorded_at,
+    )
+    MEDICAL_RECORDS.append(record)
+
+    _upsert_sync_status(
+        patient_id=patient_id,
+        category=record.category,
+        system_id=source_system_id,
+        last_synced_at=record.recorded_at,
+    )
+    _refresh_dashboard_service()
+
+    return {
+        "record_id": record.record_id,
+        "patient_id": record.patient_id,
+        "category": record.category,
+        "value_description": record.value_description,
+        "recorded_at": record.recorded_at.isoformat(),
+        "system_id": record.system_id or "sys-internal",
+        "system_name": SYSTEM_NAME_BY_ID.get(
+            record.system_id or "sys-internal", "Unknown"
+        ),
+    }
+
+
+@router.patch("/patients/{patient_id}/medical-history/{record_id}")
+def edit_medical_history_record(
+    patient_id: str,
+    record_id: str,
+    payload: MedicalHistoryUpdateRequest,
+    user: Annotated[UserRecord, Depends(require_roles("Patient", "Provider", "Admin"))],
+) -> dict[str, object]:
+    if patient_id not in PATIENT_BY_ID:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found",
+        )
+
+    if user.role == "Patient" and user.patient_id != patient_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    if (
+        payload.category is None
+        and payload.value_description is None
+        and payload.recorded_at is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="At least one field must be provided",
+        )
+
+    target_record: MedicalRecordItem | None = None
+    for record in MEDICAL_RECORDS:
+        if record.record_id == record_id and record.patient_id == patient_id:
+            target_record = record
+            break
+
+    if target_record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Medical record not found",
+        )
+
+    if payload.category is not None:
+        target_record.category = payload.category.strip()
+    if payload.value_description is not None:
+        target_record.value_description = payload.value_description.strip()
+    if payload.recorded_at is not None:
+        target_record.recorded_at = payload.recorded_at
+
+    _upsert_sync_status(
+        patient_id=patient_id,
+        category=target_record.category,
+        system_id=target_record.system_id or "sys-internal",
+        last_synced_at=target_record.recorded_at,
+    )
+    _refresh_dashboard_service()
+
+    return {
+        "record_id": target_record.record_id,
+        "patient_id": target_record.patient_id,
+        "category": target_record.category,
+        "value_description": target_record.value_description,
+        "recorded_at": target_record.recorded_at.isoformat(),
+        "system_id": target_record.system_id or "sys-internal",
+        "system_name": SYSTEM_NAME_BY_ID.get(
+            target_record.system_id or "sys-internal", "Unknown"
+        ),
+    }
+
+
+@router.patch("/patients/{patient_id}/health-profile")
+def edit_patient_health_profile(
+    patient_id: str,
+    payload: HealthProfileUpdateRequest,
+    user: Annotated[UserRecord, Depends(require_roles("Patient", "Provider", "Admin"))],
+) -> dict[str, object]:
+    patient = PATIENT_BY_ID.get(patient_id)
+    if patient is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found",
+        )
+
+    if user.role == "Patient" and user.patient_id != patient_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    has_updates = False
+    if payload.height is not None:
+        patient.height = payload.height
+        has_updates = True
+    if payload.weight is not None:
+        patient.weight = payload.weight
+        has_updates = True
+    if payload.family_history is not None:
+        normalized_family_history = payload.family_history.strip()
+        patient.family_history = normalized_family_history or None
+        has_updates = True
+    if payload.vaccination_record is not None:
+        normalized_vaccination_record = payload.vaccination_record.strip()
+        patient.vaccination_record = normalized_vaccination_record or None
+        has_updates = True
+
+    if not has_updates:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="At least one profile field must be provided",
+        )
+
+    _refresh_dashboard_service()
+    return {
+        "patient_id": patient.patient_id,
+        "patient_profile": {
+            "height": patient.height,
+            "weight": patient.weight,
+            "family_history": patient.family_history,
+            "vaccination_record": patient.vaccination_record,
+        },
+        "updated_at": _utc_now().isoformat(),
     }
 
 
