@@ -93,6 +93,18 @@ export function PatientDashboardPage() {
     syncError
   });
 
+  useEffect(() => {
+    if (!dashboard) return;
+    setProviderIdsInput(dashboard.providers.map(provider => provider.provider_id).join(', '));
+    setProfileHeight(dashboard.patient_profile.height === null ? '' : String(dashboard.patient_profile.height));
+    setProfileWeight(dashboard.patient_profile.weight === null ? '' : String(dashboard.patient_profile.weight));
+    setProfileFamilyHistory(dashboard.patient_profile.family_history ?? '');
+    setProfileVaccination(dashboard.patient_profile.vaccination_record ?? '');
+    if (!editingRecordId && dashboard.medical_history.length > 0) {
+      setEditingRecordId(dashboard.medical_history[0].record_id);
+    }
+  }, [dashboard, editingRecordId]);
+
   if (!patientId) {
     return <ErrorAlert message="No patient profile is linked to your account." />;
   }
@@ -116,18 +128,6 @@ export function PatientDashboardPage() {
     family_history: null
   };
   const syncEntries = syncStatus?.sync_status ?? [];
-
-  useEffect(() => {
-    if (!dashboard) return;
-    setProviderIdsInput(dashboard.providers.map(provider => provider.provider_id).join(', '));
-    setProfileHeight(dashboard.patient_profile.height === null ? '' : String(dashboard.patient_profile.height));
-    setProfileWeight(dashboard.patient_profile.weight === null ? '' : String(dashboard.patient_profile.weight));
-    setProfileFamilyHistory(dashboard.patient_profile.family_history ?? '');
-    setProfileVaccination(dashboard.patient_profile.vaccination_record ?? '');
-    if (!editingRecordId && dashboard.medical_history.length > 0) {
-      setEditingRecordId(dashboard.medical_history[0].record_id);
-    }
-  }, [dashboard, editingRecordId]);
 
   const runAction = async (action: () => Promise<void>, successMessage: string) => {
     setActionLoading(true);
