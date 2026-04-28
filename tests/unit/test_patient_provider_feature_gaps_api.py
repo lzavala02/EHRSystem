@@ -60,6 +60,47 @@ def test_provider_can_assign_self_to_patient() -> None:
     assert payload["status"] in {"assigned", "already_assigned"}
 
 
+def test_new_provider_can_assign_self_to_patient() -> None:
+    client = TestClient(api.app)
+    email = "showcase.provider@example.com"
+    provider_id: str | None = None
+
+    try:
+        register_response = client.post(
+            "/v1/auth/register",
+            json={
+                "email": email,
+                "password": "ShowcasePass2!",
+                "name": "Showcase Provider",
+                "role": "Provider",
+            },
+        )
+        assert register_response.status_code == 200
+
+        provider_id = api.USERS_BY_EMAIL[email.casefold()].provider_id
+        assert provider_id is not None
+
+        token = _login_and_get_token(client, email=email, password="ShowcasePass2!")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        response = client.post("/v1/provider/patients/pat-2/assign-self", headers=headers)
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["patient_id"] == "pat-2"
+        assert payload["provider_id"] == provider_id
+        assert payload["status"] in {"assigned", "already_assigned"}
+    finally:
+        if provider_id is not None:
+            api.PROVIDERS[:] = [
+                provider for provider in api.PROVIDERS if provider.provider_id != provider_id
+            ]
+            api.PROVIDER_BY_ID.pop(provider_id, None)
+            api.USERS_BY_ID.pop(api.USERS_BY_EMAIL[email.casefold()].user_id, None)
+            api.USERS_BY_EMAIL.pop(email.casefold(), None)
+            api._refresh_dashboard_service()
+
+
 def test_patient_can_connect_source_system() -> None:
     client = TestClient(api.app)
     token = _login_and_get_token(client, email="patient@example.com")
@@ -150,3 +191,57 @@ def test_patient_cannot_edit_other_patient_health_profile() -> None:
     )
 
     assert response.status_code == 403
+
+
+def test_new_patient_is_available_in_provider_dashboard_flow() -> None:
+    client = TestClient(api.app)
+    email = "showcase.patient@example.com"
+    patient_id: str | None = None
+
+    try:
+        register_response = client.post(
+            "/v1/auth/register",
+            json={
+                "email": email,
+                "password": "ShowcasePass1!",
+                "name": "Showcase Patient",
+                "role": "Patient",
+            },
+        )
+        assert register_response.status_code == 200
+
+        patient_id = api.USERS_BY_EMAIL[email.casefold()].patient_id
+        assert patient_id is not None
+
+        provider_token = _login_and_get_token(client, email="provider@example.com")
+        headers = {"Authorization": f"Bearer {provider_token}"}
+
+        dashboard_response = client.get(
+            f"/v1/dashboard/patients/{patient_id}",
+            headers=headers,
+        )
+        assert dashboard_response.status_code == 200
+        dashboard_payload = dashboard_response.json()
+        assert dashboard_payload["patient_id"] == patient_id
+        assert dashboard_payload["patient_profile"]["height"] is None
+        assert dashboard_payload["medical_history"] == []
+
+        sync_response = client.get(
+            f"/v1/dashboard/patients/{patient_id}/sync-status",
+            headers=headers,
+        )
+        assert sync_response.status_code == 200
+        assert sync_response.json()["patient_id"] == patient_id
+        assert sync_response.json()["sync_status"] == []
+    finally:
+        if patient_id is not None:
+            api.PATIENTS[:] = [
+                patient for patient in api.PATIENTS if patient.patient_id != patient_id
+            ]
+            api.PATIENT_BY_ID.pop(patient_id, None)
+            api.PATIENT_SOURCE_CONNECTIONS.pop(patient_id, None)
+            api.CARE_TEAM_BY_PATIENT.pop(patient_id, None)
+            api.SYNC_STATUS_BY_PATIENT.pop(patient_id, None)
+            api.USERS_BY_ID.pop(api.USERS_BY_EMAIL[email.casefold()].user_id, None)
+            api.USERS_BY_EMAIL.pop(email.casefold(), None)
+            api._refresh_dashboard_service()

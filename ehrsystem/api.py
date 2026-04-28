@@ -876,6 +876,37 @@ def register_account(payload: RegisterRequest) -> dict[str, str]:
     USERS_BY_ID[user_id] = user
     USERS_BY_EMAIL[user.email.casefold()] = user
 
+    # Add new patient to PATIENTS list so they appear in provider patient lists
+    if payload.role == "Patient" and patient_id:
+        new_patient = Patient(
+            patient_id=patient_id,
+            full_name=payload.name,
+            height=None,
+            weight=None,
+            family_history=None,
+            vaccination_record=None,
+            primary_provider_id=None,
+        )
+        PATIENTS.append(new_patient)
+        PATIENT_BY_ID[patient_id] = new_patient
+        PATIENT_SOURCE_CONNECTIONS[patient_id] = set()
+        CARE_TEAM_BY_PATIENT.setdefault(patient_id, [])
+        _refresh_dashboard_service()
+        _rebuild_sync_status_cache(patient_id)
+        logger.info(f"Patient created and added to patient list: patient_id={patient_id}")
+
+    if payload.role == "Provider" and provider_id:
+        new_provider = Provider(
+            provider_id=provider_id,
+            name=payload.name,
+            specialty=None,
+            clinic_affiliation=None,
+        )
+        PROVIDERS.append(new_provider)
+        PROVIDER_BY_ID[provider_id] = new_provider
+        _refresh_dashboard_service()
+        logger.info(f"Provider created and added to provider registry: provider_id={provider_id}")
+
     logger.info(
         f"User registered successfully: user_id={user_id}, "
         f"email={payload.email}, role={payload.role}"
