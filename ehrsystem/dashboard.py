@@ -84,7 +84,7 @@ class UnifiedChronicDiseaseDashboardService:
 
         patient = self._patients_by_id.get(patient_id)
         if patient is None:
-            raise KeyError(f"Unknown patient_id: {patient_id}")
+            raise ValueError(f"Unknown patient_id: {patient_id}")
 
         care_team_ids = []
         if patient.primary_provider_id:
@@ -109,7 +109,7 @@ class UnifiedChronicDiseaseDashboardService:
 
         patient = self._patients_by_id.get(patient_id)
         if patient is None:
-            raise KeyError(f"Unknown patient_id: {patient_id}")
+            raise ValueError(f"Unknown patient_id: {patient_id}")
 
         missing_fields: list[MissingDataField] = []
         checks = [

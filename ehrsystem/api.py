@@ -805,7 +805,10 @@ def root():
     """Serve frontend SPA at root."""
     if os.path.exists(index_html_path):
         return FileResponse(index_html_path)
-    return {"error": "Frontend build not found. Run: npm run build in frontend/"}
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Frontend build not found. Run: npm run build in frontend/",
+    )
 
 
 @app.get("/health/live")
@@ -893,7 +896,9 @@ def register_account(payload: RegisterRequest) -> dict[str, str]:
         CARE_TEAM_BY_PATIENT.setdefault(patient_id, [])
         _refresh_dashboard_service()
         _rebuild_sync_status_cache(patient_id)
-        logger.info(f"Patient created and added to patient list: patient_id={patient_id}")
+        logger.info(
+            f"Patient created and added to patient list: patient_id={patient_id}"
+        )
 
     if payload.role == "Provider" and provider_id:
         new_provider = Provider(
@@ -905,7 +910,9 @@ def register_account(payload: RegisterRequest) -> dict[str, str]:
         PROVIDERS.append(new_provider)
         PROVIDER_BY_ID[provider_id] = new_provider
         _refresh_dashboard_service()
-        logger.info(f"Provider created and added to provider registry: provider_id={provider_id}")
+        logger.info(
+            f"Provider created and added to provider registry: provider_id={provider_id}"
+        )
 
     logger.info(
         f"User registered successfully: user_id={user_id}, "
@@ -1160,7 +1167,12 @@ def get_patient_dashboard(
             status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
         )
 
-    snapshot = DASHBOARD_SERVICE.build_dashboard(patient_id)
+    try:
+        snapshot = DASHBOARD_SERVICE.build_dashboard(patient_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
+        ) from None
     patient = PATIENT_BY_ID[patient_id]
     medical_history: list[dict[str, str]] = []
     for item in snapshot.medical_history:
@@ -1917,6 +1929,13 @@ def update_patient_provider_list(
     CARE_TEAM_BY_PATIENT[patient_id] = care_team_provider_ids
     _refresh_dashboard_service()
 
+    try:
+        care_team = DASHBOARD_SERVICE.list_care_team(patient_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
+        ) from None
+
     return {
         "patient_id": patient_id,
         "providers": [
@@ -1926,7 +1945,7 @@ def update_patient_provider_list(
                 "specialty": member.specialty or "Unknown",
                 "clinic_affiliation": member.clinic_affiliation or "Unknown",
             }
-            for member in DASHBOARD_SERVICE.list_care_team(patient_id)
+            for member in care_team
         ],
         "updated_at": _utc_now().isoformat(),
     }
