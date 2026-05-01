@@ -109,3 +109,17 @@ erDiagram
         alert_status status
     }
 ```
+
+---
+
+# Render Host Link
+
+https://ehrsystem-1gtp.onrender.com/
+
+---
+
+# Render, Sentry, UpTimeRobot Screenshots
+
+![RenderHost Deployment](docs/RenderHost.png)
+![Sentry Monitoring](docs/Sentry.png)
+![UpTimeRobot Monitoring](docs/UpTimeRobot.png)

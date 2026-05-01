@@ -1,0 +1,64 @@
+[tool.poetry]
+name = "ehrsystem"
+version = "0.1.0"
+description = "Patient health record subsystem for chronic disease management"
+authors = ["celin"]
+packages = [{ include = "ehrsystem" }]
+
+[tool.poetry.dependencies]
+python = "^3.13"
+fastapi = "^0.116.1"
+uvicorn = { extras = ["standard"], version = "^0.35.0" }
+redis = "^6.4.0"
+rq = "^2.6.0"
+psycopg = { extras = ["binary"], version = "^3.2.10" }
+httpx = "^0.28.1"
+ruff = "^0.15.10"
+mypy = "^1.20.1"
+pytest-cov = "^7.1.0"
+pre-commit = "^4.5.1"
+python-dotenv = "^1.2.2"
+sentry-sdk = "^2.58.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 88  # same as black default
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes: undefined names, unused imports, etc.
+    "I",   # isort: import ordering
+    "B",   # flake8-bugbear: common bug patterns
+    "UP",  # pyupgrade: use modern Python syntax
+]
+ignore = [
+    "E501",  # line too long - handled by formatter, not linter
+    "B008",  # do not perform function call in default args (common in FastAPI/Streamlit)
+]
+
+# files/dirs to skip
+exclude = [
+    ".venv",
+    "__pycache__",
+    "migrations",
+    "alembic",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ehrsystem", "app", "core", "utils", "services"]  # your own modules
+
+[tool.ruff.format]
+quote-style = "double"        # consistent with black
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+[dependency-groups]
+dev = [
+    "ruff (>=0.15.10,<0.16.0)",
+    "pytest (>=9.0.3,<10.0.0)",
+    "pytest-playwright (>=0.7.2,<0.8.0)"
+]

@@ -76,7 +76,7 @@ SELECT
     TRUE AS two_factor_enabled,
     p.provider_id
 FROM latest_patient_row lpr
-LEFT JOIN providers p
+JOIN providers p
     ON LOWER(p.name) = LOWER(lpr.doctor)
    AND LOWER(p.clinic_affiliation) = LOWER(lpr.hospital)
 WHERE NOT EXISTS (
@@ -98,18 +98,38 @@ WHERE NULLIF(TRIM(s.insurance_provider), '') IS NOT NULL
       WHERE LOWER(e.system_name) = LOWER(TRIM(s.insurance_provider))
   );
 
+-- Ensure there is a fallback local source for rows missing insurance provider.
+INSERT INTO ehr_systems (system_name, protocol)
+SELECT
+    'Clinic Repository' AS system_name,
+    'FHIR'::protocol_type AS protocol
+WHERE NOT EXISTS (
+    SELECT 1 FROM ehr_systems WHERE LOWER(system_name) = 'clinic repository'
+);
+
 -- 5) Insert medical record items as categorized facts
 WITH mapped AS (
     SELECT
         s.*,
         pt.patient_id,
-        e.system_id,
-        COALESCE(s.date_of_admission::TIMESTAMPTZ, CURRENT_TIMESTAMP) AS recorded_at_ts
+        COALESCE(e.system_id, fallback.system_id) AS system_id,
+        (
+            COALESCE(
+                s.date_of_admission::TIMESTAMP,
+                CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+            ) AT TIME ZONE 'UTC'
+        ) AS recorded_at_ts
     FROM stg_healthcare_raw s
     JOIN patients pt
       ON LOWER(pt.full_name) = LOWER(TRIM(s.name))
     LEFT JOIN ehr_systems e
       ON LOWER(e.system_name) = LOWER(TRIM(s.insurance_provider))
+    CROSS JOIN LATERAL (
+        SELECT system_id
+        FROM ehr_systems
+        WHERE LOWER(system_name) = 'clinic repository'
+        LIMIT 1
+    ) AS fallback
 )
 INSERT INTO medical_record_items (
     patient_id,

@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+.git/
+.gitignore
+README.md
+docs/
+tests/
+*.md
+frontend/node_modules
+frontend/.vite

@@ -1,0 +1,18 @@
+services:
+  api:
+    environment:
+      APP_ENV: staging
+      APP_SECRET_KEY_FILE: /run/secrets/app_secret_key
+    secrets:
+      - app_secret_key
+
+  worker:
+    environment:
+      APP_ENV: staging
+      APP_SECRET_KEY_FILE: /run/secrets/app_secret_key
+    secrets:
+      - app_secret_key
+
+secrets:
+  app_secret_key:
+    file: ./secrets/app_secret_key.dev

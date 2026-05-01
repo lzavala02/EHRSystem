@@ -1,0 +1,64 @@
+name: CI-CD-Skeleton
+
+on:
+  pull_request:
+    branches: ["*"]
+  push:
+    branches: ["main", "develop"]
+  workflow_dispatch:
+
+jobs:
+  test-and-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+          pip install pytest ruff
+
+      - name: Run lint
+        run: ruff check .
+
+      - name: Run tests
+        run: pytest -q
+
+  build-api-image:
+    runs-on: ubuntu-latest
+    needs: test-and-quality
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker build -t ehrsystem-api:${{ github.sha }} .
+
+  deploy-staging:
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    needs: build-api-image
+    environment: staging
+    steps:
+      - name: Placeholder staging deploy step
+        run: |
+          echo "Add your staging deployment command here"
+          echo "Expected secrets: STAGING_HOST, STAGING_SSH_KEY, STAGING_REGISTRY_TOKEN"
+
+  deploy-production:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: build-api-image
+    environment: production
+    steps:
+      - name: Placeholder production deploy step
+        run: |
+          echo "Add your production deployment command here"
+          echo "Expected secrets: PROD_HOST, PROD_SSH_KEY, PROD_REGISTRY_TOKEN"
